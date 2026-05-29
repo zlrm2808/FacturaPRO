@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-type AppPage = 'dashboard' | 'pos' | 'clients' | 'client-detail' | 'inventory' | 'accounts' | 'reports' | 'audit' | 'notifications' | 'settings' | 'licenses' | 'users'
+type AppPage = 'dashboard' | 'pos' | 'clients' | 'client-detail' | 'inventory' | 'accounts' | 'overdue' | 'suppliers' | 'reports' | 'audit' | 'notifications' | 'settings' | 'licenses' | 'users'
 
 interface AuthState {
   token: string | null

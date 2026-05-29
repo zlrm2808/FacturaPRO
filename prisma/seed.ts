@@ -369,6 +369,140 @@ async function main() {
 
   console.log(`  ✅ Facturas creadas: ${invoice1.number}, ${invoice2.number}, ${invoice3.number}`)
 
+  // ==================== SUPPLIERS ====================
+  console.log('Creando proveedores...')
+
+  const suppliersData = [
+    {
+      name: 'Distribuidora Nacional SRL',
+      phone: '809-532-1000',
+      email: 'ventas@distnacional.com.do',
+      address: 'Zona Industrial de Herrera, Santo Domingo',
+      rncCedula: '101-234567-2',
+      contactName: 'Pedro Herrera',
+      status: 'ACTIVO',
+    },
+    {
+      name: 'Importaciones La Fuente',
+      phone: '829-544-2200',
+      email: 'contacto@lafuente.com.do',
+      address: 'Calle El Sol #12, Santiago',
+      rncCedula: '102-345678-3',
+      contactName: 'Ana Gómez',
+      status: 'ACTIVO',
+    },
+    {
+      name: 'Bebidas del Caribe',
+      phone: '809-567-3300',
+      email: 'pedidos@bebidascaribe.com.do',
+      address: 'Autopista Las Américas Km 8, Santo Domingo',
+      rncCedula: '103-456789-4',
+      contactName: 'Ricardo Vega',
+      status: 'ACTIVO',
+    },
+  ]
+
+  const suppliers: { id: string; name: string }[] = []
+  for (const sData of suppliersData) {
+    const existing = await prisma.supplier.findFirst({ where: { name: sData.name } })
+    if (!existing) {
+      const supplier = await prisma.supplier.create({ data: sData })
+      suppliers.push(supplier)
+    } else {
+      suppliers.push(existing)
+    }
+  }
+  console.log(`  ✅ Proveedores creados: ${suppliers.length}`)
+
+  // ==================== OVERDUE INVOICE (for WhatsApp demo) ====================
+  console.log('Creando factura vencida de demostración...')
+
+  const overdueItems = [
+    { productId: products['PROD-001']!.id, quantity: 5, unitPrice: 65.00, discount: 0 },
+    { productId: products['PROD-005']!.id, quantity: 1, unitPrice: 245.00, discount: 0 },
+  ]
+  const overdueSubtotal = overdueItems.reduce((sum, item) => sum + item.quantity * item.unitPrice - item.discount, 0)
+  const overdueTax = overdueSubtotal * 0.18
+  const overdueTotal = overdueSubtotal + overdueTax
+
+  // Create an overdue invoice (date 45 days ago)
+  const overdueDate = new Date()
+  overdueDate.setDate(overdueDate.getDate() - 45)
+
+  const existingOverdue = await prisma.invoice.findFirst({ where: { number: 'FAC-000004' } })
+  if (!existingOverdue) {
+    await prisma.invoice.create({
+      data: {
+        number: 'FAC-000004',
+        date: overdueDate,
+        subtotal: overdueSubtotal,
+        tax: overdueTax,
+        discount: 0,
+        total: overdueTotal,
+        status: 'VENCIDA',
+        paymentMethod: 'CREDITO',
+        notes: 'Factura vencida - pago a 30 días',
+        clientId: clients[0]!.id, // Juan Pérez
+        userId: administrador.id,
+        items: {
+          create: overdueItems.map((item) => ({
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            subtotal: item.quantity * item.unitPrice - item.discount,
+            discount: item.discount,
+            productId: item.productId,
+          })),
+        },
+      },
+    })
+    console.log('  ✅ Factura vencida creada: FAC-000004')
+  } else {
+    console.log('  ⏭️  Factura vencida ya existe')
+  }
+
+  // Another overdue for a different client
+  const overdue2Items = [
+    { productId: products['PROD-003']!.id, quantity: 10, unitPrice: 165.00, discount: 0 },
+    { productId: products['PROD-004']!.id, quantity: 5, unitPrice: 120.00, discount: 0 },
+  ]
+  const overdue2Subtotal = overdue2Items.reduce((sum, item) => sum + item.quantity * item.unitPrice - item.discount, 0)
+  const overdue2Tax = overdue2Subtotal * 0.18
+  const overdue2Total = overdue2Subtotal + overdue2Tax
+
+  const overdue2Date = new Date()
+  overdue2Date.setDate(overdue2Date.getDate() - 60)
+
+  const existingOverdue2 = await prisma.invoice.findFirst({ where: { number: 'FAC-000005' } })
+  if (!existingOverdue2) {
+    await prisma.invoice.create({
+      data: {
+        number: 'FAC-000005',
+        date: overdue2Date,
+        subtotal: overdue2Subtotal,
+        tax: overdue2Tax,
+        discount: 0,
+        total: overdue2Total,
+        status: 'VENCIDA',
+        paymentMethod: 'CREDITO',
+        notes: 'Factura vencida - pago a 30 días',
+        clientId: clients[4]!.id, // Roberto Fernández (has phone 829-555-7890)
+        userId: administrador.id,
+        items: {
+          create: overdue2Items.map((item) => ({
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            subtotal: item.quantity * item.unitPrice - item.discount,
+            discount: item.discount,
+            productId: item.productId,
+          })),
+        },
+      },
+    })
+    console.log('  ✅ Factura vencida creada: FAC-000005')
+  } else {
+    console.log('  ⏭️  Factura vencida 2 ya existe')
+  }
+
   console.log('\n🌱 Seed completado exitosamente')
 }
 

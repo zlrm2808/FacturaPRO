@@ -25,6 +25,7 @@ model User {
   auditLogs      AuditLog[]
   notifications  Notification[]
   accountEntries AccountEntry[]
+  purchaseOrders PurchaseOrder[]
 }
 
 // ==================== LICENSES ====================
@@ -88,8 +89,9 @@ model Product {
   categoryId String?
   category   Category? @relation(fields: [categoryId], references: [id])
 
-  invoiceItems   InvoiceItem[]
-  stockMovements StockMovement[]
+  invoiceItems      InvoiceItem[]
+  stockMovements    StockMovement[]
+  purchaseOrderItems PurchaseOrderItem[]
 }
 
 model StockMovement {
@@ -101,7 +103,63 @@ model StockMovement {
   reference String?
   createdAt DateTime @default(now())
 
-  product Product @relation(fields: [productId], references: [id])
+  product    Product  @relation(fields: [productId], references: [id])
+  supplierId String?
+  supplier   Supplier? @relation(fields: [supplierId], references: [id])
+}
+
+// ==================== SUPPLIERS ====================
+
+model Supplier {
+  id          String   @id @default(cuid())
+  name        String
+  phone       String?
+  email       String?
+  address     String?
+  rncCedula   String?
+  contactName String?
+  status      String   @default("ACTIVO") // ACTIVO, INACTIVO
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  stockMovements StockMovement[]
+  purchaseOrders PurchaseOrder[]
+}
+
+// ==================== PURCHASE ORDERS ====================
+
+model PurchaseOrder {
+  id            String   @id @default(cuid())
+  number        String   @unique
+  date          DateTime @default(now())
+  subtotal      Float    @default(0)
+  tax           Float    @default(0)
+  total         Float    @default(0)
+  status        String   @default("PENDIENTE") // PENDIENTE, RECIBIDA, PARCIAL, ANULADA
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  supplierId String
+  supplier   Supplier @relation(fields: [supplierId], references: [id])
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  items PurchaseOrderItem[]
+}
+
+model PurchaseOrderItem {
+  id          String  @id @default(cuid())
+  productId   String
+  product     Product @relation(fields: [productId], references: [id])
+  quantity    Int     @default(1)
+  unitPrice   Float
+  subtotal    Float
+  received    Int     @default(0)
+
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
 }
 
 // ==================== INVOICES / BILLING ====================

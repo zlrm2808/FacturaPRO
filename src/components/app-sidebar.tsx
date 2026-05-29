@@ -21,9 +21,11 @@ import {
   LogOut,
   ChevronLeft,
   ChevronRight,
+  AlertTriangle,
+  Truck,
 } from 'lucide-react'
 
-type Page = 'dashboard' | 'pos' | 'clients' | 'client-detail' | 'inventory' | 'accounts' | 'reports' | 'audit' | 'notifications' | 'settings' | 'licenses' | 'users'
+type Page = 'dashboard' | 'pos' | 'clients' | 'client-detail' | 'inventory' | 'accounts' | 'overdue' | 'suppliers' | 'reports' | 'audit' | 'notifications' | 'settings' | 'licenses' | 'users'
 
 const mainNav: { id: Page; label: string; icon: React.ElementType; roles?: string[] }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -31,6 +33,8 @@ const mainNav: { id: Page; label: string; icon: React.ElementType; roles?: strin
   { id: 'clients', label: 'Clientes', icon: Users },
   { id: 'inventory', label: 'Inventario', icon: Package },
   { id: 'accounts', label: 'Estados de Cuenta', icon: FileText },
+  { id: 'overdue', label: 'Facturas Vencidas', icon: AlertTriangle },
+  { id: 'suppliers', label: 'Proveedores', icon: Truck },
   { id: 'reports', label: 'Reportes', icon: BarChart3 },
 ]
 

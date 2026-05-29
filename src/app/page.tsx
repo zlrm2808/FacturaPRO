@@ -10,6 +10,8 @@ import { PosView } from '@/components/pos-view'
 import { ClientsView } from '@/components/clients-view'
 import { InventoryView } from '@/components/inventory-view'
 import { AccountsView } from '@/components/accounts-view'
+import { OverdueView } from '@/components/overdue-view'
+import { SuppliersView } from '@/components/suppliers-view'
 import { ReportsView } from '@/components/reports-view'
 import { AuditView } from '@/components/audit-view'
 import { NotificationsView } from '@/components/notifications-view'
@@ -67,6 +69,8 @@ function Header() {
     clients: 'Gestión de Clientes',
     inventory: 'Gestión de Inventario',
     accounts: 'Estados de Cuenta',
+    overdue: 'Facturas Vencidas',
+    suppliers: 'Proveedores',
     reports: 'Reportes',
     audit: 'Auditoría',
     notifications: 'Notificaciones',
@@ -138,6 +142,10 @@ function AppContent() {
         return <InventoryView />
       case 'accounts':
         return <AccountsView />
+      case 'overdue':
+        return <OverdueView />
+      case 'suppliers':
+        return <SuppliersView />
       case 'reports':
         return <ReportsView />
       case 'audit':
