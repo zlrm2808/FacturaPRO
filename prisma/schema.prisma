@@ -1,0 +1,213 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== USERS & AUTH ====================
+
+model User {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  password  String
+  name      String
+  email     String?
+  role      String   @default("EMPLEADO") // DESARROLLADOR, ADMINISTRADOR, EMPLEADO
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  invoices       Invoice[]
+  transactions   Transaction[]
+  auditLogs      AuditLog[]
+  notifications  Notification[]
+  accountEntries AccountEntry[]
+}
+
+// ==================== LICENSES ====================
+
+model License {
+  id             String   @id @default(cuid())
+  licenseKey     String   @unique
+  clientName     String
+  status         String   @default("ACTIVA") // ACTIVA, VENCIDA, SUSPENDIDA
+  activationDate DateTime @default(now())
+  expirationDate DateTime
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+// ==================== CLIENTS ====================
+
+model Client {
+  id        String   @id @default(cuid())
+  name      String
+  phone     String?
+  address   String?
+  email     String?
+  rncCedula String?
+  balance   Float    @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  invoices       Invoice[]
+  accountEntries AccountEntry[]
+  transactions   Transaction[]
+}
+
+// ==================== CATEGORIES ====================
+
+model Category {
+  id          String @id @default(cuid())
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  products Product[]
+}
+
+// ==================== PRODUCTS / INVENTORY ====================
+
+model Product {
+  id             String   @id @default(cuid())
+  code           String   @unique
+  name           String
+  description    String?
+  purchasePrice  Float    @default(0)
+  salePrice      Float    @default(0)
+  quantity       Int      @default(0)
+  minStock       Int      @default(5)
+  status         String   @default("ACTIVO") // ACTIVO, INACTIVO
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id])
+
+  invoiceItems   InvoiceItem[]
+  stockMovements StockMovement[]
+}
+
+model StockMovement {
+  id        String   @id @default(cuid())
+  productId String
+  type      String   // ENTRADA, SALIDA
+  quantity  Int
+  reason    String?
+  reference String?
+  createdAt DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id])
+}
+
+// ==================== INVOICES / BILLING ====================
+
+model Invoice {
+  id            String   @id @default(cuid())
+  number        String   @unique
+  date          DateTime @default(now())
+  subtotal      Float    @default(0)
+  tax           Float    @default(0)
+  discount      Float    @default(0)
+  total         Float    @default(0)
+  status        String   @default("PENDIENTE") // PAGADA, PENDIENTE, VENCIDA, ANULADA
+  paymentMethod String   @default("EFECTIVO") // EFECTIVO, TRANSFERENCIA, TARJETA, CREDITO
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  clientId String?
+  client   Client? @relation(fields: [clientId], references: [id])
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  items        InvoiceItem[]
+  accountEntries AccountEntry[]
+  transactions Transaction[]
+}
+
+model InvoiceItem {
+  id         String  @id @default(cuid())
+  quantity   Int     @default(1)
+  unitPrice  Float
+  subtotal   Float
+  discount   Float   @default(0)
+
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+}
+
+// ==================== ACCOUNT STATEMENTS ====================
+
+model AccountEntry {
+  id          String   @id @default(cuid())
+  type        String   // CREDITO, DEBITO, ABONO
+  amount      Float
+  description String?
+  date        DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id])
+
+  invoiceId String?
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id])
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id])
+}
+
+// ==================== AUDIT LOG ====================
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  action    String
+  module    String
+  details   String?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id])
+}
+
+// ==================== NOTIFICATIONS ====================
+
+model Notification {
+  id        String   @id @default(cuid())
+  type      String   // FACTURA_VENCIDA, PAGO_PENDIENTE, LICENCIA_VENCER, INVENTARIO_BAJO
+  title     String
+  message   String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id])
+}
+
+// ==================== TRANSACTIONS PER USER ====================
+
+model Transaction {
+  id            String   @id @default(cuid())
+  amount        Float
+  paymentMethod String   // EFECTIVO, TRANSFERENCIA, TARJETA, CREDITO
+  date          DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  clientId String?
+  client   Client? @relation(fields: [clientId], references: [id])
+
+  invoiceId String?
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id])
+}
