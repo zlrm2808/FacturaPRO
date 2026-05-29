@@ -28,6 +28,17 @@ model User {
   purchaseOrders PurchaseOrder[]
 }
 
+// ==================== DOLLAR RATES ====================
+
+model DollarRate {
+  id           String   @id @default(cuid())
+  date         DateTime @unique // One rate per day
+  officialRate Float    // BCV official rate
+  parallelRate Float    // Parallel market rate
+  source       String   @default("ve.dolarapi.com")
+  createdAt    DateTime @default(now())
+}
+
 // ==================== LICENSES ====================
 
 model License {
@@ -135,6 +146,8 @@ model PurchaseOrder {
   subtotal      Float    @default(0)
   tax           Float    @default(0)
   total         Float    @default(0)
+  totalBs       Float    @default(0) // Total in Bolivares
+  dollarRate    Float    @default(0) // Official rate used for conversion
   status        String   @default("PENDIENTE") // PENDIENTE, RECIBIDA, PARCIAL, ANULADA
   notes         String?
   createdAt     DateTime @default(now())
@@ -172,6 +185,8 @@ model Invoice {
   tax           Float    @default(0)
   discount      Float    @default(0)
   total         Float    @default(0)
+  totalBs       Float    @default(0) // Total in Bolivares
+  dollarRate    Float    @default(0) // Official rate used for conversion
   status        String   @default("PENDIENTE") // PAGADA, PENDIENTE, VENCIDA, ANULADA
   paymentMethod String   @default("EFECTIVO") // EFECTIVO, TRANSFERENCIA, TARJETA, CREDITO
   notes         String?
@@ -209,6 +224,8 @@ model AccountEntry {
   id          String   @id @default(cuid())
   type        String   // CREDITO, DEBITO, ABONO
   amount      Float
+  amountBs    Float    @default(0) // Amount in Bolivares
+  dollarRate  Float    @default(0) // Official rate used for conversion
   description String?
   date        DateTime @default(now())
   createdAt   DateTime @default(now())
@@ -256,6 +273,8 @@ model Notification {
 model Transaction {
   id            String   @id @default(cuid())
   amount        Float
+  amountBs      Float    @default(0) // Amount in Bolivares
+  dollarRate    Float    @default(0) // Official rate used for conversion
   paymentMethod String   // EFECTIVO, TRANSFERENCIA, TARJETA, CREDITO
   date          DateTime @default(now())
   createdAt     DateTime @default(now())

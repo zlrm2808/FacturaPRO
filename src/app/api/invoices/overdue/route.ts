@@ -2,6 +2,13 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getUserFromRequest } from '@/lib/auth'
 
+function calcDaysOverdue(dateStr: string | Date): number {
+  const d = new Date(dateStr)
+  const now = new Date()
+  const diffMs = now.getTime() - d.getTime()
+  return Math.floor(diffMs / (1000 * 60 * 60 * 24))
+}
+
 // GET /api/invoices/overdue - Get all overdue/vencida invoices grouped by client
 // Also includes PENDIENTE invoices older than 30 days (auto-mark as vencida concept)
 export async function GET(request: Request) {
@@ -33,45 +40,67 @@ export async function GET(request: Request) {
             name: true,
             phone: true,
             email: true,
-          },
-        },
-        items: {
-          include: {
-            product: { select: { id: true, name: true } },
+            balance: true,
           },
         },
       },
       orderBy: { date: 'asc' },
     })
 
-    // Group invoices by client
+    // Group invoices by client and calculate days overdue
     const clientMap = new Map<string, {
-      client: { id: string; name: string; phone: string | null; email: string | null }
-      invoices: typeof overdueInvoices
-      totalOverdue: number
+      client: { id: string; name: string; phone: string | null; email: string | null; balance: number }
+      invoices: any[]
+      totalBalance: number
+      totalBalanceBs: number
     }>()
 
     for (const invoice of overdueInvoices) {
       const clientId = invoice.clientId || 'SIN_CLIENTE'
-      const clientInfo = invoice.client || { id: 'SIN_CLIENTE', name: 'Sin Cliente', phone: null, email: null }
+      const clientInfo = invoice.client || { id: 'SIN_CLIENTE', name: 'Sin Cliente', phone: null, email: null, balance: 0 }
 
       if (!clientMap.has(clientId)) {
         clientMap.set(clientId, {
           client: clientInfo,
           invoices: [],
-          totalOverdue: 0,
+          totalBalance: 0,
+          totalBalanceBs: 0,
         })
       }
 
       const group = clientMap.get(clientId)!
-      group.invoices.push(invoice)
-      group.totalOverdue += invoice.total
+      const daysOverdue = calcDaysOverdue(invoice.date)
+      group.invoices.push({
+        id: invoice.id,
+        number: invoice.number,
+        date: invoice.date,
+        subtotal: invoice.subtotal,
+        tax: invoice.tax,
+        discount: invoice.discount,
+        total: invoice.total,
+        totalBs: invoice.totalBs,
+        dollarRate: invoice.dollarRate,
+        status: invoice.status,
+        paymentMethod: invoice.paymentMethod,
+        clientId: invoice.clientId,
+        daysOverdue,
+      })
+      group.totalBalance += invoice.total
+      group.totalBalanceBs += invoice.totalBs
     }
 
     // Convert map to array
-    const result = Array.from(clientMap.values())
+    const clients = Array.from(clientMap.values())
 
-    return NextResponse.json(result)
+    // Build summary
+    const summary = {
+      totalOverdueAmount: clients.reduce((sum, c) => sum + c.totalBalance, 0),
+      totalOverdueAmountBs: clients.reduce((sum, c) => sum + c.totalBalanceBs, 0),
+      totalInvoiceCount: clients.reduce((sum, c) => sum + c.invoices.length, 0),
+      totalClientsWithDebt: clients.length,
+    }
+
+    return NextResponse.json({ clients, summary })
   } catch (error) {
     console.error('Error getting overdue invoices:', error)
     return NextResponse.json({ error: 'Error al obtener facturas vencidas' }, { status: 500 })

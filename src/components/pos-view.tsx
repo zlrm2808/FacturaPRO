@@ -3,7 +3,7 @@
 import { useState, useMemo, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
-import { formatCurrency, formatDateTime, getStatusColor, getPaymentMethodLabel } from '@/lib/format'
+import { formatCurrency, formatBs, formatDateTime, getStatusColor, getPaymentMethodLabel } from '@/lib/format'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -52,6 +52,7 @@ import {
   Loader2,
   Receipt,
   ChevronDown,
+  DollarSign,
 } from 'lucide-react'
 
 interface CartItem {
@@ -94,6 +95,8 @@ interface Invoice {
   tax: number
   discount: number
   total: number
+  totalBs: number
+  dollarRate: number
   status: string
   paymentMethod: string
   createdAt: string
@@ -140,6 +143,14 @@ export function PosView() {
   const [selectedInvoice, setSelectedInvoice] = useState<InvoiceDetail | null>(null)
   const [invoiceDialogOpen, setInvoiceDialogOpen] = useState(false)
 
+  // Fetch today's dollar rate
+  const { data: dollarRateData } = useQuery({
+    queryKey: ['dollar-rate-today'],
+    queryFn: () => api.get('/dollar-rates?action=effective'),
+    refetchInterval: 300000, // Refresh every 5 minutes
+  })
+  const dollarRate = dollarRateData?.officialRate || 0
+
   // Fetch products
   const { data: products = [], isLoading: productsLoading } = useQuery<Product[]>({
     queryKey: ['products', searchTerm, selectedCategory],
@@ -179,7 +190,7 @@ export function PosView() {
     mutationFn: (data: any) => api.post('/invoices', data),
     onSuccess: (data) => {
       toast.success(`Factura ${data.number} creada exitosamente`, {
-        description: `Total: ${formatCurrency(data.total)}`,
+        description: `Total: ${formatCurrency(data.total)} / ${formatBs(data.totalBs)}`,
       })
       // Clear cart
       setCart([])
@@ -201,11 +212,12 @@ export function PosView() {
 
   // Cart calculations
   const cartSubtotal = useMemo(() => cart.reduce((sum, item) => sum + item.subtotal, 0), [cart])
-  const cartTax = useMemo(() => taxEnabled ? (cartSubtotal - discount) * 0.18 : 0, [cartSubtotal, discount, taxEnabled])
+  const cartTax = useMemo(() => taxEnabled ? (cartSubtotal - discount) * 0.16 : 0, [cartSubtotal, discount, taxEnabled])
   const cartTotal = useMemo(() => {
     const taxable = cartSubtotal - discount
     return taxable > 0 ? taxable + cartTax : 0
   }, [cartSubtotal, discount, cartTax])
+  const cartTotalBs = useMemo(() => cartTotal * dollarRate, [cartTotal, dollarRate])
 
   // Add to cart
   const addToCart = useCallback((product: Product) => {
@@ -332,6 +344,15 @@ export function PosView() {
           <p className="text-muted-foreground text-sm">Punto de venta</p>
         </div>
         <div className="flex items-center gap-2">
+          {/* Dollar Rate Indicator */}
+          {dollarRate > 0 && (
+            <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
+              <DollarSign className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                1 USD = Bs. {dollarRate.toFixed(2)}
+              </span>
+            </div>
+          )}
           <Button
             variant={showHistory ? 'default' : 'outline'}
             size="sm"
@@ -350,6 +371,7 @@ export function PosView() {
           isLoading={invoicesLoading}
           onViewInvoice={viewInvoice}
           onClose={() => setShowHistory(false)}
+          dollarRate={dollarRate}
         />
       ) : (
         <div className="flex-1 flex flex-col lg:flex-row gap-4 min-h-0">
@@ -434,9 +456,16 @@ export function PosView() {
                           </div>
                           <p className="text-xs text-muted-foreground">{product.code}</p>
                           <div className="flex items-center justify-between">
-                            <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
-                              {formatCurrency(product.salePrice)}
-                            </p>
+                            <div>
+                              <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
+                                {formatCurrency(product.salePrice)}
+                              </p>
+                              {dollarRate > 0 && (
+                                <p className="text-[10px] text-muted-foreground">
+                                  {formatBs(product.salePrice * dollarRate)}
+                                </p>
+                              )}
+                            </div>
                             <Badge
                               variant="outline"
                               className={`text-[10px] px-1.5 py-0 ${
@@ -563,6 +592,11 @@ export function PosView() {
                             <p className="text-sm font-medium truncate">{item.name}</p>
                             <p className="text-xs text-muted-foreground">
                               {formatCurrency(item.unitPrice)} c/u
+                              {dollarRate > 0 && (
+                                <span className="ml-1 text-emerald-600 dark:text-emerald-400">
+                                  ({formatBs(item.unitPrice * dollarRate)})
+                                </span>
+                              )}
                             </p>
                           </div>
                           <div className="flex items-center gap-1">
@@ -586,6 +620,11 @@ export function PosView() {
                           </div>
                           <div className="text-right min-w-[70px]">
                             <p className="text-sm font-semibold">{formatCurrency(item.subtotal)}</p>
+                            {dollarRate > 0 && (
+                              <p className="text-[10px] text-emerald-600 dark:text-emerald-400">
+                                {formatBs(item.subtotal * dollarRate)}
+                              </p>
+                            )}
                           </div>
                           <Button
                             variant="ghost"
@@ -607,7 +646,14 @@ export function PosView() {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground">Subtotal</span>
-                    <span className="font-medium">{formatCurrency(cartSubtotal)}</span>
+                    <div className="text-right">
+                      <span className="font-medium">{formatCurrency(cartSubtotal)}</span>
+                      {dollarRate > 0 && cartSubtotal > 0 && (
+                        <span className="ml-1 text-xs text-emerald-600 dark:text-emerald-400">
+                          {formatBs(cartSubtotal * dollarRate)}
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   {/* Tax Toggle */}
@@ -620,12 +666,19 @@ export function PosView() {
                         className="scale-75 origin-left"
                       />
                       <Label htmlFor="tax-toggle" className="text-sm text-muted-foreground cursor-pointer">
-                        ITBIS (18%)
+                        IVA (16%)
                       </Label>
                     </div>
-                    <span className="text-sm font-medium">
-                      {taxEnabled ? formatCurrency(cartTax) : '—'}
-                    </span>
+                    <div className="text-right">
+                      <span className="text-sm font-medium">
+                        {taxEnabled ? formatCurrency(cartTax) : '—'}
+                      </span>
+                      {taxEnabled && dollarRate > 0 && cartTax > 0 && (
+                        <span className="ml-1 text-xs text-emerald-600 dark:text-emerald-400">
+                          {formatBs(cartTax * dollarRate)}
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   {/* Discount */}
@@ -648,9 +701,16 @@ export function PosView() {
 
                   <div className="flex items-center justify-between">
                     <span className="text-lg font-bold">Total</span>
-                    <span className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
-                      {formatCurrency(cartTotal)}
-                    </span>
+                    <div className="text-right">
+                      <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
+                        {formatCurrency(cartTotal)}
+                      </p>
+                      {dollarRate > 0 && cartTotal > 0 && (
+                        <p className="text-sm font-semibold text-emerald-500 dark:text-emerald-300">
+                          {formatBs(cartTotalBs)}
+                        </p>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -744,6 +804,12 @@ export function PosView() {
                   <p className="text-muted-foreground text-xs">Cajero</p>
                   <p className="font-medium">{selectedInvoice.user?.name}</p>
                 </div>
+                <div>
+                  <p className="text-muted-foreground text-xs">Tasa del Día</p>
+                  <p className="font-medium text-emerald-600 dark:text-emerald-400">
+                    {selectedInvoice.dollarRate > 0 ? `Bs. ${selectedInvoice.dollarRate.toFixed(2)}` : 'N/A'}
+                  </p>
+                </div>
               </div>
 
               <Separator />
@@ -761,7 +827,14 @@ export function PosView() {
                           {item.discount > 0 && ` - Desc: ${formatCurrency(item.discount)}`}
                         </p>
                       </div>
-                      <span className="font-semibold ml-2">{formatCurrency(item.subtotal)}</span>
+                      <div className="text-right ml-2">
+                        <span className="font-semibold">{formatCurrency(item.subtotal)}</span>
+                        {selectedInvoice.dollarRate > 0 && (
+                          <p className="text-[10px] text-emerald-600 dark:text-emerald-400">
+                            {formatBs(item.subtotal * selectedInvoice.dollarRate)}
+                          </p>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -776,7 +849,7 @@ export function PosView() {
                   <span>{formatCurrency(selectedInvoice.subtotal)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">ITBIS</span>
+                  <span className="text-muted-foreground">IVA</span>
                   <span>{formatCurrency(selectedInvoice.tax)}</span>
                 </div>
                 {selectedInvoice.discount > 0 && (
@@ -788,9 +861,16 @@ export function PosView() {
                 <Separator />
                 <div className="flex justify-between font-bold text-lg">
                   <span>Total</span>
-                  <span className="text-emerald-600 dark:text-emerald-400">
-                    {formatCurrency(selectedInvoice.total)}
-                  </span>
+                  <div className="text-right">
+                    <span className="text-emerald-600 dark:text-emerald-400">
+                      {formatCurrency(selectedInvoice.total)}
+                    </span>
+                    {selectedInvoice.totalBs > 0 && (
+                      <p className="text-sm font-semibold text-emerald-500 dark:text-emerald-300">
+                        {formatBs(selectedInvoice.totalBs)}
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -807,11 +887,13 @@ function InvoiceHistory({
   isLoading,
   onViewInvoice,
   onClose,
+  dollarRate,
 }: {
   invoicesData: any
   isLoading: boolean
   onViewInvoice: (id: string) => void
   onClose: () => void
+  dollarRate: number
 }) {
   const invoices = invoicesData?.data || []
 
@@ -849,6 +931,7 @@ function InvoiceHistory({
                   <th className="text-left py-2 font-medium text-muted-foreground">Fecha</th>
                   <th className="text-left py-2 font-medium text-muted-foreground hidden sm:table-cell">Cliente</th>
                   <th className="text-right py-2 font-medium text-muted-foreground">Total</th>
+                  <th className="text-right py-2 font-medium text-muted-foreground hidden md:table-cell">Bs.</th>
                   <th className="text-left py-2 font-medium text-muted-foreground hidden md:table-cell">Estado</th>
                   <th className="text-left py-2 font-medium text-muted-foreground hidden lg:table-cell">Pago</th>
                   <th className="text-right py-2 font-medium text-muted-foreground">Acciones</th>
@@ -867,6 +950,9 @@ function InvoiceHistory({
                     </td>
                     <td className="py-2.5 text-xs font-semibold text-right">
                       {formatCurrency(inv.total)}
+                    </td>
+                    <td className="py-2.5 text-xs font-semibold text-right hidden md:table-cell text-emerald-600 dark:text-emerald-400">
+                      {inv.totalBs > 0 ? formatBs(inv.totalBs) : '-'}
                     </td>
                     <td className="py-2.5 hidden md:table-cell">
                       <Badge className={`text-[10px] ${getStatusColor(inv.status)}`}>

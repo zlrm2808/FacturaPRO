@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getUserFromRequest } from '@/lib/auth'
+import { getEffectiveDollarRate } from '@/lib/dollar-rate'
 
 // GET /api/invoices - List all invoices with filters and pagination
 export async function GET(request: Request) {
@@ -126,10 +127,15 @@ export async function POST(request: Request) {
     })
 
     const invoiceDiscount = discount || 0
-    const taxRate = 0.18
+    const taxRate = 0.16
     const taxableAmount = subtotal - invoiceDiscount
     const tax = taxableAmount * taxRate
     const total = taxableAmount + tax
+
+    // Get today's dollar rate
+    const dollarRateInfo = await getEffectiveDollarRate(new Date())
+    const dollarRate = dollarRateInfo.officialRate
+    const totalBs = total * dollarRate
 
     // Auto-generate invoice number (FAC-XXXXXX format)
     const lastInvoice = await db.invoice.findFirst({
@@ -156,6 +162,8 @@ export async function POST(request: Request) {
           tax,
           discount: invoiceDiscount,
           total,
+          totalBs,
+          dollarRate,
           status: 'PENDIENTE',
           paymentMethod: paymentMethod || 'EFECTIVO',
           notes: notes?.trim() || null,
@@ -204,6 +212,8 @@ export async function POST(request: Request) {
           data: {
             type: 'CREDITO',
             amount: total,
+            amountBs: totalBs,
+            dollarRate,
             description: `Factura ${invoiceNumber} - Venta a crédito`,
             clientId: clientId,
             invoiceId: inv.id,
@@ -216,6 +226,8 @@ export async function POST(request: Request) {
       await tx.transaction.create({
         data: {
           amount: total,
+          amountBs: totalBs,
+          dollarRate,
           paymentMethod: paymentMethod || 'EFECTIVO',
           userId: user.userId,
           clientId: clientId || null,
@@ -230,7 +242,7 @@ export async function POST(request: Request) {
       data: {
         action: 'CREAR_FACTURA',
         module: 'FACTURAS',
-        details: `Factura creada: ${invoiceNumber} - Total: ${total.toFixed(2)}`,
+        details: `Factura creada: ${invoiceNumber} - Total: $${total.toFixed(2)} / Bs.${totalBs.toFixed(2)} - Tasa: ${dollarRate}`,
         userId: user.userId,
       },
     })

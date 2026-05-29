@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '@/lib/store'
 import { api } from '@/lib/api'
-import { formatDate, getStatusColor, getRoleLabel } from '@/lib/format'
+import { formatDate, formatBs, getStatusColor, getRoleLabel } from '@/lib/format'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -49,6 +49,8 @@ import {
   RefreshCw,
   Pencil,
   Shield,
+  DollarSign,
+  Loader2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -240,6 +242,10 @@ export function SettingsView() {
           <TabsTrigger value="users" className="gap-1.5">
             <UserCog className="w-4 h-4" />
             Usuarios
+          </TabsTrigger>
+          <TabsTrigger value="dollar-rates" className="gap-1.5">
+            <DollarSign className="w-4 h-4" />
+            Tasa del Dólar
           </TabsTrigger>
           <TabsTrigger value="config" className="gap-1.5">
             <Building2 className="w-4 h-4" />
@@ -635,6 +641,11 @@ export function SettingsView() {
           </Dialog>
         </TabsContent>
 
+        {/* ===== DOLLAR RATES TAB ===== */}
+        <TabsContent value="dollar-rates" className="space-y-4 mt-4">
+          <DollarRatesSection />
+        </TabsContent>
+
         {/* ===== CONFIGURACIÓN TAB ===== */}
         <TabsContent value="config" className="space-y-4 mt-4">
           <Card>
@@ -659,8 +670,8 @@ export function SettingsView() {
                   <p className="font-medium">B0100000001</p>
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-muted-foreground text-xs">Tasa ITBIS</Label>
-                  <p className="font-medium">18%</p>
+                  <Label className="text-muted-foreground text-xs">Tasa IVA</Label>
+                  <p className="font-medium">16%</p>
                 </div>
               </div>
               <Separator />
@@ -701,5 +712,149 @@ export function SettingsView() {
         </TabsContent>
       </Tabs>
     </div>
+  )
+}
+
+function DollarRatesSection() {
+  const queryClient = useQueryClient()
+  const { user } = useAuthStore()
+
+  const { data: ratesData, isLoading } = useQuery({
+    queryKey: ['dollar-rates-list'],
+    queryFn: () => api.get('/dollar-rates'),
+  })
+
+  const fetchRateMutation = useMutation({
+    mutationFn: () => api.post('/dollar-rates'),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['dollar-rates-list'] })
+      queryClient.invalidateQueries({ queryKey: ['header-dollar-rate'] })
+      queryClient.invalidateQueries({ queryKey: ['dollar-rate-today'] })
+      toast.success(`Tasa actualizada: Oficial Bs. ${data.officialRate.toFixed(2)}, Paralelo Bs. ${data.parallelRate.toFixed(2)}`)
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Error al actualizar tasa desde la API')
+    },
+  })
+
+  const rates = ratesData?.rates || []
+  const todayRate = ratesData?.todayRate || null
+  const isAdmin = user?.role === 'DESARROLLADOR' || user?.role === 'ADMINISTRADOR'
+
+  return (
+    <>
+      {/* Current Rate Card */}
+      <Card className="border-emerald-200 dark:border-emerald-800">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <DollarSign className="w-5 h-5 text-emerald-600" />
+              Tasa del Dólar Actual
+            </CardTitle>
+            {isAdmin && (
+              <Button
+                onClick={() => fetchRateMutation.mutate()}
+                disabled={fetchRateMutation.isPending}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                size="sm"
+              >
+                {fetchRateMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                ) : (
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                )}
+                Actualizar desde API
+              </Button>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {todayRate ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="flex items-center gap-3 p-4 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500">
+                  <DollarSign className="h-6 w-6 text-white" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Dólar Oficial (BCV)</p>
+                  <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-300">
+                    Bs. {todayRate.officialRate.toFixed(2)}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-500">
+                  <DollarSign className="h-6 w-6 text-white" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Dólar Paralelo</p>
+                  <p className="text-2xl font-bold text-amber-700 dark:text-amber-300">
+                    Bs. {todayRate.parallelRate.toFixed(2)}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <DollarSign className="w-10 h-10 mx-auto mb-2 opacity-40" />
+              <p>No hay tasa del dólar registrada</p>
+              <p className="text-xs mt-1">Haga clic en &quot;Actualizar desde API&quot; para obtener la tasa actual</p>
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground mt-3">
+            Fuente: ve.dolarapi.com - La tasa oficial del BCV se utiliza para todas las conversiones a Bolívares.
+            Los días sin tasa (fines de semana, feriados) se utiliza la última tasa disponible.
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* Rate History */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Historial de Tasas</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          {isLoading ? (
+            <div className="animate-pulse p-6 space-y-3">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="h-12 bg-muted rounded" />
+              ))}
+            </div>
+          ) : rates.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <DollarSign className="w-12 h-12 mx-auto mb-2 opacity-50" />
+              <p>No hay tasas registradas</p>
+            </div>
+          ) : (
+            <ScrollArea className="max-h-96">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Fecha</TableHead>
+                    <TableHead className="text-right">Oficial (BCV)</TableHead>
+                    <TableHead className="text-right">Paralelo</TableHead>
+                    <TableHead>Fuente</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rates.map((rate: { id: string; date: string; officialRate: number; parallelRate: number; source: string }) => (
+                    <TableRow key={rate.id}>
+                      <TableCell className="font-medium">{formatDate(rate.date)}</TableCell>
+                      <TableCell className="text-right text-emerald-600 dark:text-emerald-400 font-semibold">
+                        Bs. {rate.officialRate.toFixed(2)}
+                      </TableCell>
+                      <TableCell className="text-right text-amber-600 dark:text-amber-400 font-semibold">
+                        Bs. {rate.parallelRate.toFixed(2)}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{rate.source}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </ScrollArea>
+          )}
+        </CardContent>
+      </Card>
+    </>
   )
 }

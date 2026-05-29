@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getUserFromRequest } from '@/lib/auth'
+import { getEffectiveDollarRate } from '@/lib/dollar-rate'
 
 // GET /api/purchase-orders - List purchase orders
 export async function GET(request: Request) {
@@ -104,9 +105,14 @@ export async function POST(request: Request) {
       }
     })
 
-    const taxRate = 0.18
+    const taxRate = 0.16
     const tax = subtotal * taxRate
     const total = subtotal + tax
+
+    // Get today's dollar rate
+    const dollarRateInfo = await getEffectiveDollarRate(new Date())
+    const dollarRate = dollarRateInfo.officialRate
+    const totalBs = total * dollarRate
 
     // Auto-generate order number (OC-XXXXXX format)
     const lastOrder = await db.purchaseOrder.findFirst({
@@ -129,6 +135,8 @@ export async function POST(request: Request) {
         subtotal,
         tax,
         total,
+        totalBs,
+        dollarRate,
         status: 'PENDIENTE',
         notes: notes?.trim() || null,
         supplierId,
@@ -152,7 +160,7 @@ export async function POST(request: Request) {
       data: {
         action: 'CREAR_ORDEN_COMPRA',
         module: 'PROVEEDORES',
-        details: `Orden de compra creada: ${orderNumber} - Proveedor: ${supplier.name} - Total: ${total.toFixed(2)}`,
+        details: `Orden de compra creada: ${orderNumber} - Proveedor: ${supplier.name} - Total: $${total.toFixed(2)} / Bs.${totalBs.toFixed(2)} - Tasa: ${dollarRate}`,
         userId: user.userId,
       },
     })

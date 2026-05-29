@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getUserFromRequest } from '@/lib/auth'
+import { getEffectiveDollarRate } from '@/lib/dollar-rate'
 
 export async function GET(request: Request) {
   try {
@@ -91,6 +92,11 @@ export async function POST(request: Request) {
       )
     }
 
+    // Get today's dollar rate
+    const dollarRateInfo = await getEffectiveDollarRate(new Date())
+    const dollarRate = dollarRateInfo.officialRate
+    const amountBs = amount * dollarRate
+
     // Calculate balance change
     let balanceChange = 0
     if (type === 'CREDITO') {
@@ -106,6 +112,8 @@ export async function POST(request: Request) {
           clientId,
           type,
           amount,
+          amountBs,
+          dollarRate,
           description,
           invoiceId: invoiceId || null,
           userId: payload.userId,
@@ -125,7 +133,7 @@ export async function POST(request: Request) {
         data: {
           action: 'CREAR_MOVIMIENTO_CUENTA',
           module: 'CUENTAS',
-          details: `Movimiento ${type} por ${amount} para cliente ${client.name}`,
+          details: `Movimiento ${type} por $${amount.toFixed(2)} / Bs.${amountBs.toFixed(2)} para cliente ${client.name} - Tasa: ${dollarRate}`,
           userId: payload.userId,
         },
       })

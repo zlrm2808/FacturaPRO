@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
-import { formatCurrency, formatDate, getStatusColor } from '@/lib/format'
+import { formatCurrency, formatBs, formatDate, getStatusColor } from '@/lib/format'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -93,6 +93,8 @@ interface PurchaseOrder {
   subtotal: number
   tax: number
   total: number
+  totalBs: number
+  dollarRate: number
   status: string
   notes: string | null
   supplierId: string
@@ -206,6 +208,14 @@ export function SuppliersView() {
     queryKey: ['suppliers', ''],
     queryFn: () => api.get('/suppliers'),
   })
+
+  // Dollar rate for new PO dialog
+  const { data: dollarRateData } = useQuery({
+    queryKey: ['dollar-rate-today'],
+    queryFn: () => api.get('/dollar-rates?action=effective'),
+    refetchInterval: 300000,
+  })
+  const currentDollarRate = dollarRateData?.officialRate || 0
 
   // ============ SUPPLIER MUTATIONS ============
   const createSupplierMutation = useMutation({
@@ -407,8 +417,9 @@ export function SuppliersView() {
 
   // PO calculations
   const poSubtotal = poItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0)
-  const poTax = poSubtotal * 0.18
+  const poTax = poSubtotal * 0.16
   const poTotal = poSubtotal + poTax
+  const poTotalBs = useMemo(() => poTotal * currentDollarRate, [poTotal, currentDollarRate])
 
   // Open PO detail
   const openPODetail = (order: PurchaseOrder) => {
@@ -626,6 +637,7 @@ export function SuppliersView() {
                       <TableHead>Proveedor</TableHead>
                       <TableHead className="hidden md:table-cell">Fecha</TableHead>
                       <TableHead className="text-right">Total</TableHead>
+                      <TableHead className="hidden lg:table-cell text-right">Total Bs</TableHead>
                       <TableHead>Estado</TableHead>
                       <TableHead className="text-right">Acciones</TableHead>
                     </TableRow>
@@ -640,6 +652,9 @@ export function SuppliersView() {
                         </TableCell>
                         <TableCell className="text-right font-medium">
                           {formatCurrency(order.total)}
+                        </TableCell>
+                        <TableCell className="hidden lg:table-cell text-right text-muted-foreground text-xs">
+                          {order.totalBs > 0 ? formatBs(order.totalBs) : '-'}
                         </TableCell>
                         <TableCell>
                           <Badge className={PO_STATUS_COLORS[order.status] || 'bg-gray-100 text-gray-800'}>
@@ -859,6 +874,7 @@ export function SuppliersView() {
                         <TableHead>Número</TableHead>
                         <TableHead>Fecha</TableHead>
                         <TableHead className="text-right">Total</TableHead>
+                        <TableHead className="text-right">Total Bs</TableHead>
                         <TableHead>Estado</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -868,6 +884,9 @@ export function SuppliersView() {
                           <TableCell className="font-medium">{order.number}</TableCell>
                           <TableCell className="text-muted-foreground">{formatDate(order.date)}</TableCell>
                           <TableCell className="text-right">{formatCurrency(order.total)}</TableCell>
+                          <TableCell className="text-right text-xs text-muted-foreground">
+                            {order.totalBs > 0 ? formatBs(order.totalBs) : '-'}
+                          </TableCell>
                           <TableCell>
                             <Badge className={PO_STATUS_COLORS[order.status] || 'bg-gray-100 text-gray-800'}>
                               {order.status}
@@ -1037,6 +1056,17 @@ export function SuppliersView() {
                           <span>Total:</span>
                           <span>{formatCurrency(poTotal)}</span>
                         </div>
+                        {currentDollarRate > 0 && (
+                          <div className="flex justify-between text-sm text-emerald-600 dark:text-emerald-400">
+                            <span>Total Bs:</span>
+                            <span className="font-semibold">{formatBs(poTotalBs)}</span>
+                          </div>
+                        )}
+                        {currentDollarRate > 0 && (
+                          <p className="text-xs text-muted-foreground">
+                            Tasa: 1 USD = Bs. {currentDollarRate.toFixed(2)}
+                          </p>
+                        )}
                       </div>
                     </div>
                   )}
@@ -1113,6 +1143,12 @@ export function SuppliersView() {
                   </div>
                 </div>
 
+                {selectedOrder.dollarRate > 0 && (
+                  <div className="rounded-md bg-emerald-50 dark:bg-emerald-900/20 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-400">
+                    Tasa del día: 1 USD = Bs. {selectedOrder.dollarRate.toFixed(2)}
+                  </div>
+                )}
+
                 {selectedOrder.notes && (
                   <div>
                     <p className="text-xs text-muted-foreground">Notas</p>
@@ -1142,8 +1178,18 @@ export function SuppliersView() {
                             <span className="text-muted-foreground ml-1">({item.product.code})</span>
                           </TableCell>
                           <TableCell className="text-right">{item.quantity}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(item.unitPrice)}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(item.subtotal)}</TableCell>
+                          <TableCell className="text-right">
+                            {formatCurrency(item.unitPrice)}
+                            {selectedOrder.dollarRate > 0 && (
+                              <p className="text-[10px] text-emerald-600 dark:text-emerald-400">{formatBs(item.unitPrice * selectedOrder.dollarRate)}</p>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {formatCurrency(item.subtotal)}
+                            {selectedOrder.dollarRate > 0 && (
+                              <p className="text-[10px] text-emerald-600 dark:text-emerald-400">{formatBs(item.subtotal * selectedOrder.dollarRate)}</p>
+                            )}
+                          </TableCell>
                           <TableCell className="text-right">{item.received}</TableCell>
                         </TableRow>
                       ))}
@@ -1166,6 +1212,12 @@ export function SuppliersView() {
                     <span>Total:</span>
                     <span>{formatCurrency(selectedOrder.total)}</span>
                   </div>
+                  {selectedOrder.totalBs > 0 && (
+                    <div className="flex justify-between text-sm text-emerald-600 dark:text-emerald-400">
+                      <span>Total Bs:</span>
+                      <span className="font-semibold">{formatBs(selectedOrder.totalBs)}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Actions */}

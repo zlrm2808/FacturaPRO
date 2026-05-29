@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
-import { formatCurrency, formatDate } from '@/lib/format'
+import { formatCurrency, formatBs, formatDate } from '@/lib/format'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -52,7 +52,7 @@ import {
   User,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { differenceInDays } from 'date-fns'
+// daysOverdue is calculated server-side
 
 interface OverdueInvoice {
   id: string
@@ -62,6 +62,8 @@ interface OverdueInvoice {
   tax: number
   discount: number
   total: number
+  totalBs: number
+  dollarRate: number
   status: string
   paymentMethod: string
   clientId: string
@@ -85,6 +87,7 @@ interface ClientGroup {
   }
   invoices: OverdueInvoice[]
   totalBalance: number
+  totalBalanceBs: number
 }
 
 interface OverdueData {
@@ -100,23 +103,31 @@ function formatPhoneForWhatsApp(phone: string | null): string | null {
   if (!phone) return null
   // Remove dashes, spaces, parentheses
   let cleaned = phone.replace(/[-\s()]/g, '')
-  // If it starts with 809, 829, or 849 (Dominican Republic area codes), prepend "1"
-  if (/^(809|829|849)\d{7}$/.test(cleaned)) {
-    cleaned = '1' + cleaned
-  }
-  // If it already starts with +1 or 1, just remove the +
+  // If it already starts with +, just remove the +
   if (cleaned.startsWith('+')) {
     cleaned = cleaned.substring(1)
+  }
+  // Venezuelan numbers: if starts with 0, replace with 58
+  if (/^0\d{9}$/.test(cleaned)) {
+    cleaned = '58' + cleaned.substring(1)
+  }
+  // If it's a 10-digit number starting with 412, 414, 416, 424, 426 (Venezuelan mobile), prepend 58
+  if (/^(412|414|416|424|426)\d{7}$/.test(cleaned)) {
+    cleaned = '58' + cleaned
   }
   return cleaned
 }
 
-function buildWhatsAppMessage(clientName: string, invoices: OverdueInvoice[], totalBalance: number): string {
+function buildWhatsAppMessage(clientName: string, invoices: OverdueInvoice[], totalBalance: number, totalBalanceBs: number): string {
   const invoiceLines = invoices
-    .map((inv) => `📋 Factura ${inv.number} - Fecha: ${formatDate(inv.date)} - Monto: RD$${inv.total.toFixed(2)}`)
+    .map((inv) => {
+      const bsStr = inv.totalBs ? ` / ${formatBs(inv.totalBs)}` : ''
+      return `📋 Factura ${inv.number} - Fecha: ${formatDate(inv.date)} - Monto: ${formatCurrency(inv.total)}${bsStr}`
+    })
     .join('\n')
 
-  return `Hola ${clientName}, le contactamos de FacturaPro para recordarle que tiene facturas pendientes de pago:\n\n${invoiceLines}\n\n💰 Total pendiente: RD$${totalBalance.toFixed(2)}\n\nPor favor comuníquese con nosotros para regularizar su cuenta. ¡Gracias!`
+  const totalBsStr = totalBalanceBs ? ` / ${formatBs(totalBalanceBs)}` : ''
+  return `Hola ${clientName}, le contactamos de FacturaPro para recordarle que tiene facturas pendientes de pago:\n\n${invoiceLines}\n\n💰 Total pendiente: ${formatCurrency(totalBalance)}${totalBsStr}\n\nPor favor comuníquese con nosotros para regularizar su cuenta. ¡Gracias!`
 }
 
 export function OverdueView() {
@@ -182,7 +193,7 @@ export function OverdueView() {
       toast.error('El cliente no tiene teléfono registrado')
       return
     }
-    const message = buildWhatsAppMessage(clientGroup.client.name, clientGroup.invoices, clientGroup.totalBalance)
+    const message = buildWhatsAppMessage(clientGroup.client.name, clientGroup.invoices, clientGroup.totalBalance, clientGroup.totalBalanceBs)
     const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`
     window.open(url, '_blank')
   }
@@ -193,7 +204,7 @@ export function OverdueView() {
     for (const clientGroup of data.clients) {
       const phone = formatPhoneForWhatsApp(clientGroup.client.phone)
       if (phone) {
-        const message = buildWhatsAppMessage(clientGroup.client.name, clientGroup.invoices, clientGroup.totalBalance)
+        const message = buildWhatsAppMessage(clientGroup.client.name, clientGroup.invoices, clientGroup.totalBalance, clientGroup.totalBalanceBs)
         const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`
         window.open(url, '_blank')
         opened++
@@ -254,6 +265,9 @@ export function OverdueView() {
   const clients = data?.clients || []
   const summary = data?.summary || { totalOverdueAmount: 0, totalInvoiceCount: 0, totalClientsWithDebt: 0 }
 
+  // Compute total overdue amount in Bs from all client groups
+  const totalOverdueAmountBs = clients.reduce((sum, cg) => sum + (cg.totalBalanceBs || 0), 0)
+
   // Get current client invoices for payment dialog
   const currentClientGroup = clients.find((c) => c.client.id === paymentClientId)
   const currentClientInvoices = currentClientGroup?.invoices || []
@@ -296,6 +310,11 @@ export function OverdueView() {
                 <p className="text-xl font-bold text-red-600 dark:text-red-400">
                   {formatCurrency(summary.totalOverdueAmount)}
                 </p>
+                {totalOverdueAmountBs > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    {formatBs(totalOverdueAmountBs)}
+                  </p>
+                )}
               </div>
             </div>
           </CardContent>
@@ -398,6 +417,11 @@ export function OverdueView() {
                                 <p className="text-2xl font-bold text-red-600 dark:text-red-400">
                                   {formatCurrency(clientGroup.totalBalance)}
                                 </p>
+                                {clientGroup.totalBalanceBs > 0 && (
+                                  <p className="text-xs text-muted-foreground">
+                                    {formatBs(clientGroup.totalBalanceBs)}
+                                  </p>
+                                )}
                                 <p className="text-xs text-muted-foreground">
                                   {clientGroup.invoices.length} factura{clientGroup.invoices.length !== 1 ? 's' : ''}
                                 </p>
@@ -449,6 +473,7 @@ export function OverdueView() {
                                 <TableHead className="text-right">ITBIS</TableHead>
                                 <TableHead className="text-right">Descuento</TableHead>
                                 <TableHead className="text-right">Total</TableHead>
+                                <TableHead className="text-right">Total Bs</TableHead>
                                 <TableHead>Estado</TableHead>
                                 <TableHead className="text-right">Días Vencida</TableHead>
                                 <TableHead className="text-right">Acciones</TableHead>
@@ -456,7 +481,7 @@ export function OverdueView() {
                             </TableHeader>
                             <TableBody>
                               {clientGroup.invoices.map((invoice) => {
-                                const days = invoice.daysOverdue || differenceInDays(new Date(), new Date(invoice.date))
+                                const days = invoice.daysOverdue || 0
                                 return (
                                   <TableRow key={invoice.id}>
                                     <TableCell className="font-medium">{invoice.number}</TableCell>
@@ -465,6 +490,9 @@ export function OverdueView() {
                                     <TableCell className="text-right text-sm">{formatCurrency(invoice.tax)}</TableCell>
                                     <TableCell className="text-right text-sm">{formatCurrency(invoice.discount)}</TableCell>
                                     <TableCell className="text-right font-medium">{formatCurrency(invoice.total)}</TableCell>
+                                    <TableCell className="text-right text-sm">
+                                      {invoice.totalBs ? formatBs(invoice.totalBs) : '—'}
+                                    </TableCell>
                                     <TableCell>{getStatusBadge(invoice.status, days)}</TableCell>
                                     <TableCell className="text-right">
                                       <span className="text-sm font-medium text-red-600 dark:text-red-400">

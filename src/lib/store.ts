@@ -6,8 +6,10 @@ interface AuthState {
   token: string | null
   user: { id: string; username: string; name: string; role: string } | null
   isAuthenticated: boolean
+  hydrated: boolean
   login: (token: string, user: AuthState['user']) => void
   logout: () => void
+  hydrate: () => void
 }
 
 interface AppState {
@@ -22,18 +24,39 @@ interface AppState {
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
-  token: typeof window !== 'undefined' ? localStorage.getItem('token') : null,
-  user: typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('user') || 'null') : null,
-  isAuthenticated: typeof window !== 'undefined' ? !!localStorage.getItem('token') : false,
+  token: null,
+  user: null,
+  isAuthenticated: false,
+  hydrated: false,
   login: (token, user) => {
-    localStorage.setItem('token', token)
-    localStorage.setItem('user', JSON.stringify(user))
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('token', token)
+      localStorage.setItem('user', JSON.stringify(user))
+    }
     set({ token, user, isAuthenticated: true })
   },
   logout: () => {
-    localStorage.removeItem('token')
-    localStorage.removeItem('user')
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+    }
     set({ token: null, user: null, isAuthenticated: false })
+  },
+  hydrate: () => {
+    if (typeof window === 'undefined') return
+    try {
+      const token = localStorage.getItem('token')
+      const userStr = localStorage.getItem('user')
+      const user = userStr ? JSON.parse(userStr) : null
+      set({
+        token,
+        user,
+        isAuthenticated: !!token,
+        hydrated: true,
+      })
+    } catch {
+      set({ hydrated: true })
+    }
   },
 }))
 

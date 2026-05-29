@@ -1,12 +1,31 @@
 export function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('es-DO', {
+  return new Intl.NumberFormat('es-VE', {
     style: 'currency',
-    currency: 'DOP',
+    currency: 'USD',
+    minimumFractionDigits: 2,
   }).format(amount)
 }
 
+export function formatBs(amount: number): string {
+  return new Intl.NumberFormat('es-VE', {
+    style: 'currency',
+    currency: 'VES',
+    minimumFractionDigits: 2,
+  }).format(amount)
+}
+
+/**
+ * Format an amount showing both USD and Bs equivalent
+ */
+export function formatCurrencyWithBs(amountUsd: number, dollarRate?: number): string {
+  const usd = formatCurrency(amountUsd)
+  if (!dollarRate || dollarRate <= 0) return usd
+  const bs = amountUsd * dollarRate
+  return `${usd} / ${formatBs(bs)}`
+}
+
 export function formatDate(date: string | Date): string {
-  return new Intl.DateTimeFormat('es-DO', {
+  return new Intl.DateTimeFormat('es-VE', {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -14,7 +33,7 @@ export function formatDate(date: string | Date): string {
 }
 
 export function formatDateTime(date: string | Date): string {
-  return new Intl.DateTimeFormat('es-DO', {
+  return new Intl.DateTimeFormat('es-VE', {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',

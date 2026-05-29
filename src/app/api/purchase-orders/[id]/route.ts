@@ -144,7 +144,7 @@ export async function PUT(
         data: {
           action: 'RECIBIR_ORDEN_COMPRA',
           module: 'PROVEEDORES',
-          details: `Orden de compra recibida: ${existing.number} - Proveedor: ${existing.supplier.name} - Total: ${existing.total.toFixed(2)}`,
+          details: `Orden de compra recibida: ${existing.number} - Proveedor: ${existing.supplier.name} - Total: $${existing.total.toFixed(2)} / Bs.${existing.totalBs.toFixed(2)}`,
           userId: user.userId,
         },
       })

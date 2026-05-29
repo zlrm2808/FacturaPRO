@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getUserFromRequest } from '@/lib/auth'
+import { getEffectiveDollarRate } from '@/lib/dollar-rate'
 
 export async function GET(request: Request) {
   try {
@@ -30,6 +31,11 @@ export async function GET(request: Request) {
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
     const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1)
 
+    // Get today's dollar rate
+    const dollarRateInfo = await getEffectiveDollarRate(now)
+    const dollarRate = dollarRateInfo.officialRate
+    const parallelRate = dollarRateInfo.parallelRate
+
     // Sales totals
     const [
       salesToday,
@@ -46,7 +52,7 @@ export async function GET(request: Request) {
     ] = await Promise.all([
       // Sales today
       db.invoice.aggregate({
-        _sum: { total: true },
+        _sum: { total: true, totalBs: true },
         _count: true,
         where: {
           date: { gte: todayStart, lt: todayEnd },
@@ -56,7 +62,7 @@ export async function GET(request: Request) {
 
       // Sales this week
       db.invoice.aggregate({
-        _sum: { total: true },
+        _sum: { total: true, totalBs: true },
         where: {
           date: { gte: weekStart, lt: weekEnd },
           status: { not: 'ANULADA' },
@@ -65,7 +71,7 @@ export async function GET(request: Request) {
 
       // Sales this month
       db.invoice.aggregate({
-        _sum: { total: true },
+        _sum: { total: true, totalBs: true },
         where: {
           date: { gte: monthStart, lt: monthEnd },
           status: { not: 'ANULADA' },
@@ -113,9 +119,12 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       salesToday: salesToday._sum.total || 0,
+      salesTodayBs: salesToday._sum.totalBs || 0,
       salesTodayCount: salesToday._count,
       salesThisWeek: salesThisWeek._sum.total || 0,
+      salesThisWeekBs: salesThisWeek._sum.totalBs || 0,
       salesThisMonth: salesThisMonth._sum.total || 0,
+      salesThisMonthBs: salesThisMonth._sum.totalBs || 0,
       totalClients,
       totalProducts,
       lowStockCount,
@@ -124,6 +133,8 @@ export async function GET(request: Request) {
       recentTransactions,
       topSellingProducts,
       revenueChartData,
+      dollarRate,
+      parallelRate,
     })
   } catch (error) {
     console.error('Dashboard GET error:', error)
@@ -177,7 +188,7 @@ async function getRevenueChartData(todayStart: Date) {
     dayEnd.setDate(dayEnd.getDate() + 1)
 
     const result = await db.invoice.aggregate({
-      _sum: { total: true },
+      _sum: { total: true, totalBs: true },
       _count: true,
       where: {
         date: { gte: dayStart, lt: dayEnd },
@@ -188,6 +199,7 @@ async function getRevenueChartData(todayStart: Date) {
     chartData.push({
       date: dayStart.toISOString().split('T')[0],
       revenue: result._sum.total || 0,
+      revenueBs: result._sum.totalBs || 0,
       count: result._count,
     })
   }

@@ -1,27 +1,37 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, lazy, Suspense } from 'react'
 import { Providers } from '@/components/providers'
 import { useAuthStore, useAppStore } from '@/lib/store'
 import { LoginForm } from '@/components/login-form'
 import { AppSidebar } from '@/components/app-sidebar'
-import { DashboardView } from '@/components/dashboard-view'
-import { PosView } from '@/components/pos-view'
-import { ClientsView } from '@/components/clients-view'
-import { InventoryView } from '@/components/inventory-view'
-import { AccountsView } from '@/components/accounts-view'
-import { OverdueView } from '@/components/overdue-view'
-import { SuppliersView } from '@/components/suppliers-view'
-import { ReportsView } from '@/components/reports-view'
-import { AuditView } from '@/components/audit-view'
-import { NotificationsView } from '@/components/notifications-view'
-import { SettingsView } from '@/components/settings-view'
 import { Badge } from '@/components/ui/badge'
 import { api } from '@/lib/api'
-import { Bell, Moon, Sun, Menu } from 'lucide-react'
+import { Bell, Moon, Sun, Menu, Loader2, DollarSign, RefreshCw } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { Button } from '@/components/ui/button'
 import { useQuery } from '@tanstack/react-query'
+
+// Lazy load all views to reduce initial bundle size and memory usage
+const DashboardView = lazy(() => import('@/components/dashboard-view').then(m => ({ default: m.DashboardView })))
+const PosView = lazy(() => import('@/components/pos-view').then(m => ({ default: m.PosView })))
+const ClientsView = lazy(() => import('@/components/clients-view').then(m => ({ default: m.ClientsView })))
+const InventoryView = lazy(() => import('@/components/inventory-view').then(m => ({ default: m.InventoryView })))
+const AccountsView = lazy(() => import('@/components/accounts-view').then(m => ({ default: m.AccountsView })))
+const OverdueView = lazy(() => import('@/components/overdue-view').then(m => ({ default: m.OverdueView })))
+const SuppliersView = lazy(() => import('@/components/suppliers-view').then(m => ({ default: m.SuppliersView })))
+const ReportsView = lazy(() => import('@/components/reports-view').then(m => ({ default: m.ReportsView })))
+const AuditView = lazy(() => import('@/components/audit-view').then(m => ({ default: m.AuditView })))
+const NotificationsView = lazy(() => import('@/components/notifications-view').then(m => ({ default: m.NotificationsView })))
+const SettingsView = lazy(() => import('@/components/settings-view').then(m => ({ default: m.SettingsView })))
+
+function ViewLoader() {
+  return (
+    <div className="flex items-center justify-center h-64">
+      <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+    </div>
+  )
+}
 
 function LicenseBanner() {
   const { data: licenseStatus } = useQuery({
@@ -60,6 +70,11 @@ function Header() {
     queryFn: () => api.get('/notifications'),
     refetchInterval: 30000,
   })
+  const { data: dollarRateData, refetch: refetchRate, isFetching: isFetchingRate } = useQuery({
+    queryKey: ['header-dollar-rate'],
+    queryFn: () => api.get('/dollar-rates?action=effective'),
+    refetchInterval: 300000,
+  })
   const setCurrentPage = useAppStore((s) => s.setCurrentPage)
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen)
 
@@ -90,6 +105,22 @@ function Header() {
         <h1 className="text-lg font-semibold">{pageTitles[currentPage] || 'Dashboard'}</h1>
       </div>
       <div className="flex items-center gap-2">
+        {/* Dollar Rate Indicator */}
+        {dollarRateData && dollarRateData.officialRate > 0 && (
+          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
+            <DollarSign className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+            <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">
+              1 USD = Bs. {dollarRateData.officialRate.toFixed(2)}
+            </span>
+            <button
+              onClick={() => refetchRate()}
+              className="ml-0.5 text-emerald-500 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-200 transition-colors"
+              title="Actualizar tasa"
+            >
+              <RefreshCw className={`h-3 w-3 ${isFetchingRate ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+        )}
         <Button variant="ghost" size="icon" className="relative" onClick={() => setCurrentPage('notifications')}>
           <Bell className="w-4 h-4" />
           {unreadCount > 0 && (
@@ -107,18 +138,19 @@ function Header() {
 }
 
 function AppContent() {
-  const { isAuthenticated } = useAuthStore()
+  const { isAuthenticated, hydrate } = useAuthStore()
   const { currentPage } = useAppStore()
 
-  // Hydration safety: useSyncExternalStore-like pattern
-  const [hydrated, setHydrated] = useState(() => false)
-  useEffect(() => {
-    // Schedule state update after mount to avoid synchronous setState in effect
-    const id = requestAnimationFrame(() => setHydrated(true))
-    return () => cancelAnimationFrame(id)
-  }, [])
+  // Hydration: load auth state from localStorage after mount
+  const [ready, setReady] = useState(false)
 
-  if (!hydrated) {
+  useEffect(() => {
+    hydrate()
+    const id = requestAnimationFrame(() => setReady(true))
+    return () => cancelAnimationFrame(id)
+  }, [hydrate])
+
+  if (!ready) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="animate-pulse text-muted-foreground">Cargando...</div>
@@ -169,7 +201,9 @@ function AppContent() {
         <div className="flex-1 flex flex-col overflow-hidden">
           <Header />
           <main className="flex-1 overflow-auto p-4 md:p-6 bg-muted/30">
-            {renderPage()}
+            <Suspense fallback={<ViewLoader />}>
+              {renderPage()}
+            </Suspense>
           </main>
         </div>
       </div>

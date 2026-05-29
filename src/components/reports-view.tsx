@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
-import { formatCurrency, formatDate, getStatusColor, getPaymentMethodLabel } from '@/lib/format'
+import { formatCurrency, formatBs, formatDate, getStatusColor, getPaymentMethodLabel } from '@/lib/format'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -396,7 +396,8 @@ export function ReportsView() {
                       <TableHead>Cliente</TableHead>
                       <TableHead>Método</TableHead>
                       <TableHead>Estado</TableHead>
-                      <TableHead className="text-right">Total</TableHead>
+                      <TableHead className="text-right">Total (USD)</TableHead>
+                      <TableHead className="text-right hidden md:table-cell">Total (Bs)</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -408,6 +409,9 @@ export function ReportsView() {
                         <TableCell>{getPaymentMethodLabel(inv.paymentMethod as string)}</TableCell>
                         <TableCell><Badge className={getStatusColor(inv.status as string)}>{inv.status as string}</Badge></TableCell>
                         <TableCell className="text-right">{formatCurrency(inv.total as number)}</TableCell>
+                        <TableCell className="text-right hidden md:table-cell text-emerald-600 dark:text-emerald-400">
+                          {inv.totalBs ? formatBs(inv.totalBs as number) : '-'}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -494,7 +498,8 @@ export function ReportsView() {
                       <TableHead>Número</TableHead>
                       <TableHead>Fecha</TableHead>
                       <TableHead>Cliente</TableHead>
-                      <TableHead className="text-right">Total</TableHead>
+                      <TableHead className="text-right">Total (USD)</TableHead>
+                      <TableHead className="text-right hidden md:table-cell">Total (Bs)</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -504,6 +509,9 @@ export function ReportsView() {
                         <TableCell>{formatDate(inv.date as string)}</TableCell>
                         <TableCell>{(inv.client as Record<string, unknown>)?.name as string || '-'}</TableCell>
                         <TableCell className="text-right text-red-600">{formatCurrency(inv.total as number)}</TableCell>
+                        <TableCell className="text-right hidden md:table-cell text-emerald-600 dark:text-emerald-400">
+                          {inv.totalBs ? formatBs(inv.totalBs as number) : '-'}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -526,7 +534,8 @@ export function ReportsView() {
                       <TableHead>Fecha</TableHead>
                       <TableHead>Cliente</TableHead>
                       <TableHead>Método</TableHead>
-                      <TableHead className="text-right">Monto</TableHead>
+                      <TableHead className="text-right">Monto (USD)</TableHead>
+                      <TableHead className="text-right hidden md:table-cell">Monto (Bs)</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -536,6 +545,9 @@ export function ReportsView() {
                         <TableCell>{(t.client as Record<string, unknown>)?.name as string || '-'}</TableCell>
                         <TableCell>{getPaymentMethodLabel(t.paymentMethod as string)}</TableCell>
                         <TableCell className="text-right">{formatCurrency(t.amount as number)}</TableCell>
+                        <TableCell className="text-right hidden md:table-cell text-emerald-600 dark:text-emerald-400">
+                          {t.amountBs ? formatBs(t.amountBs as number) : '-'}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
-import { formatCurrency, formatDate, formatDateTime, getStatusColor, getPaymentMethodLabel } from '@/lib/format'
+import { formatCurrency, formatBs, formatDate, formatDateTime, getStatusColor, getPaymentMethodLabel } from '@/lib/format'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
@@ -35,17 +35,24 @@ const CHART_COLORS = ['#10b981', '#14b8a6', '#06b6d4', '#f59e0b', '#8b5cf6', '#e
 
 interface DashboardData {
   salesToday: number
+  salesTodayBs: number
   salesTodayCount: number
   salesThisWeek: number
+  salesThisWeekBs: number
   salesThisMonth: number
+  salesThisMonthBs: number
   totalClients: number
   totalProducts: number
   lowStockCount: number
   pendingInvoices: number
   overdueInvoices: number
+  dollarRate: number
+  parallelRate: number
   recentTransactions: {
     id: string
     amount: number
+    amountBs: number
+    dollarRate: number
     paymentMethod: string
     date: string
     user: { name: string }
@@ -60,6 +67,7 @@ interface DashboardData {
   revenueChartData: {
     date: string
     revenue: number
+    revenueBs: number
     count: number
   }[]
 }
@@ -67,6 +75,7 @@ interface DashboardData {
 function StatCard({
   title,
   value,
+  valueBs,
   subtitle,
   icon: Icon,
   iconBg,
@@ -74,6 +83,7 @@ function StatCard({
 }: {
   title: string
   value: string
+  valueBs?: string
   subtitle?: string
   icon: React.ElementType
   iconBg: string
@@ -88,7 +98,12 @@ function StatCard({
             {loading ? (
               <Skeleton className="h-8 w-28" />
             ) : (
-              <p className="text-2xl font-bold tracking-tight">{value}</p>
+              <>
+                <p className="text-2xl font-bold tracking-tight">{value}</p>
+                {valueBs && (
+                  <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">{valueBs}</p>
+                )}
+              </>
             )}
             {subtitle && !loading && (
               <p className="text-xs text-muted-foreground">{subtitle}</p>
@@ -178,6 +193,7 @@ export function DashboardView() {
     return {
       name: dayNames[d.getDay()] + ' ' + d.getDate(),
       Ventas: item.revenue,
+      VentasBs: item.revenueBs,
       Facturas: item.count,
     }
   })
@@ -201,13 +217,28 @@ export function DashboardView() {
           <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
           <p className="text-muted-foreground">Resumen general del sistema</p>
         </div>
-        <Button
-          onClick={() => setCurrentPage('pos')}
-          className="bg-emerald-600 hover:bg-emerald-700 gap-2 self-start"
-        >
-          <ShoppingCart className="h-4 w-4" />
-          Nueva Venta
-        </Button>
+        <div className="flex items-center gap-3">
+          {/* Dollar Rate Badge */}
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
+            <DollarSign className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+            <div className="text-xs">
+              <span className="font-semibold text-emerald-700 dark:text-emerald-300">
+                Oficial: {data.dollarRate > 0 ? `Bs. ${data.dollarRate.toFixed(2)}` : 'N/A'}
+              </span>
+              <span className="mx-1.5 text-muted-foreground">|</span>
+              <span className="font-semibold text-amber-700 dark:text-amber-300">
+                Paralelo: {data.parallelRate > 0 ? `Bs. ${data.parallelRate.toFixed(2)}` : 'N/A'}
+              </span>
+            </div>
+          </div>
+          <Button
+            onClick={() => setCurrentPage('pos')}
+            className="bg-emerald-600 hover:bg-emerald-700 gap-2 self-start"
+          >
+            <ShoppingCart className="h-4 w-4" />
+            Nueva Venta
+          </Button>
+        </div>
       </div>
 
       {/* Stats Cards */}
@@ -215,6 +246,7 @@ export function DashboardView() {
         <StatCard
           title="Ventas Hoy"
           value={formatCurrency(data.salesToday)}
+          valueBs={data.salesTodayBs > 0 ? formatBs(data.salesTodayBs) : undefined}
           subtitle={`${data.salesTodayCount} facturas`}
           icon={TrendingUp}
           iconBg="bg-emerald-500"
@@ -251,6 +283,9 @@ export function DashboardView() {
             <div>
               <p className="text-xs font-medium text-muted-foreground">Venta Semanal</p>
               <p className="text-lg font-bold">{formatCurrency(data.salesThisWeek)}</p>
+              {data.salesThisWeekBs > 0 && (
+                <p className="text-xs text-emerald-600 dark:text-emerald-400">{formatBs(data.salesThisWeekBs)}</p>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -262,6 +297,9 @@ export function DashboardView() {
             <div>
               <p className="text-xs font-medium text-muted-foreground">Venta Mensual</p>
               <p className="text-lg font-bold">{formatCurrency(data.salesThisMonth)}</p>
+              {data.salesThisMonthBs > 0 && (
+                <p className="text-xs text-teal-600 dark:text-teal-400">{formatBs(data.salesThisMonthBs)}</p>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -284,7 +322,7 @@ export function DashboardView() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Ventas últimos 7 días</CardTitle>
-            <CardDescription>Ingresos diarios del sistema</CardDescription>
+            <CardDescription>Ingresos diarios (USD)</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="h-72">
@@ -302,7 +340,10 @@ export function DashboardView() {
                     tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
                   />
                   <Tooltip
-                    formatter={(value: number) => [formatCurrency(value), 'Ventas']}
+                    formatter={(value: number, name: string) => {
+                      if (name === 'VentasBs') return [formatBs(value), 'Bs.']
+                      return [formatCurrency(value), 'USD']
+                    }}
                     contentStyle={{
                       backgroundColor: 'hsl(var(--card))',
                       border: '1px solid hsl(var(--border))',
@@ -394,8 +435,9 @@ export function DashboardView() {
                       <th className="text-left py-2 font-medium text-muted-foreground">Fecha</th>
                       <th className="text-left py-2 font-medium text-muted-foreground">Cliente</th>
                       <th className="text-right py-2 font-medium text-muted-foreground">Monto</th>
-                      <th className="text-left py-2 font-medium text-muted-foreground hidden sm:table-cell">Método</th>
-                      <th className="text-left py-2 font-medium text-muted-foreground hidden md:table-cell">Usuario</th>
+                      <th className="text-right py-2 font-medium text-muted-foreground hidden sm:table-cell">Bs.</th>
+                      <th className="text-left py-2 font-medium text-muted-foreground hidden md:table-cell">Método</th>
+                      <th className="text-left py-2 font-medium text-muted-foreground hidden lg:table-cell">Usuario</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -408,12 +450,15 @@ export function DashboardView() {
                         <td className="py-2.5 text-xs font-semibold text-right">
                           {formatCurrency(t.amount)}
                         </td>
-                        <td className="py-2.5 hidden sm:table-cell">
+                        <td className="py-2.5 text-xs font-semibold text-right hidden sm:table-cell text-emerald-600 dark:text-emerald-400">
+                          {t.amountBs > 0 ? formatBs(t.amountBs) : '-'}
+                        </td>
+                        <td className="py-2.5 hidden md:table-cell">
                           <Badge variant="outline" className="text-[10px] px-1.5 py-0">
                             {getPaymentMethodLabel(t.paymentMethod)}
                           </Badge>
                         </td>
-                        <td className="py-2.5 text-xs text-muted-foreground hidden md:table-cell">
+                        <td className="py-2.5 text-xs text-muted-foreground hidden lg:table-cell">
                           {t.user.name}
                         </td>
                       </tr>
@@ -476,6 +521,11 @@ export function DashboardView() {
                     </div>
                     <div className="text-right flex-shrink-0">
                       <p className="text-sm font-semibold">{formatCurrency(product.totalRevenue)}</p>
+                      {data.dollarRate > 0 && (
+                        <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                          {formatBs(product.totalRevenue * data.dollarRate)}
+                        </p>
+                      )}
                       <p className="text-xs text-muted-foreground">{product.totalQuantity} uds</p>
                     </div>
                   </div>

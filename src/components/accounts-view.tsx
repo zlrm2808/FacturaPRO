@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAppStore, useAuthStore } from '@/lib/store'
 import { api } from '@/lib/api'
-import { formatCurrency, formatDate, getStatusColor } from '@/lib/format'
+import { formatCurrency, formatBs, formatDate, getStatusColor } from '@/lib/format'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -50,6 +50,23 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 
+interface AccountEntry {
+  id: string
+  type: string
+  amount: number
+  amountBs: number
+  dollarRate: number
+  description: string | null
+  date: string
+  createdAt: string
+  clientId: string
+  client: { id: string; name: string }
+  invoiceId: string | null
+  invoice: { id: string; number: string; status: string } | null
+  userId: string
+  user: { id: string; name: string }
+}
+
 export function AccountsView() {
   const { selectedClientId, setSelectedClientId, setCurrentPage } = useAppStore()
   const { user } = useAuthStore()
@@ -74,6 +91,14 @@ export function AccountsView() {
     queryFn: () => api.get(`/accounts/${activeClientId}`),
     enabled: !!activeClientId,
   })
+
+  // Get current dollar rate for Bs equivalents
+  const { data: dollarRateData } = useQuery({
+    queryKey: ['dollar-rate-today'],
+    queryFn: () => api.get('/dollar-rates?action=today'),
+    refetchInterval: 300000, // refetch every 5 min
+  })
+  const currentDollarRate = dollarRateData?.officialRate ?? 0
 
   // Register payment mutation
   const paymentMutation = useMutation({
@@ -312,6 +337,16 @@ export function AccountsView() {
               <p className={`text-3xl font-bold ${(client?.balance ?? 0) > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
                 {formatCurrency(client?.balance ?? 0)}
               </p>
+              {currentDollarRate > 0 && (client?.balance ?? 0) !== 0 && (
+                <p className={`text-lg font-semibold ${(client?.balance ?? 0) > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
+                  {formatBs((client?.balance ?? 0) * currentDollarRate)}
+                </p>
+              )}
+              {currentDollarRate > 0 && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Tasa: Bs. {currentDollarRate.toFixed(2)} / USD
+                </p>
+              )}
             </div>
           </div>
 
@@ -322,18 +357,30 @@ export function AccountsView() {
                 <div className="text-center p-3 rounded-lg bg-red-50 dark:bg-red-900/20">
                   <p className="text-xs text-muted-foreground mb-1">Total Créditos</p>
                   <p className="text-lg font-bold text-red-600">{formatCurrency(summary.totalCreditos)}</p>
+                  {currentDollarRate > 0 && (
+                    <p className="text-xs text-red-500">{formatBs(summary.totalCreditos * currentDollarRate)}</p>
+                  )}
                 </div>
                 <div className="text-center p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20">
                   <p className="text-xs text-muted-foreground mb-1">Total Abonos</p>
                   <p className="text-lg font-bold text-emerald-600">{formatCurrency(summary.totalAbonos)}</p>
+                  {currentDollarRate > 0 && (
+                    <p className="text-xs text-emerald-500">{formatBs(summary.totalAbonos * currentDollarRate)}</p>
+                  )}
                 </div>
                 <div className="text-center p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20">
                   <p className="text-xs text-muted-foreground mb-1">Total Débitos</p>
                   <p className="text-lg font-bold text-emerald-600">{formatCurrency(summary.totalDebitos)}</p>
+                  {currentDollarRate > 0 && (
+                    <p className="text-xs text-emerald-500">{formatBs(summary.totalDebitos * currentDollarRate)}</p>
+                  )}
                 </div>
                 <div className="text-center p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20">
                   <p className="text-xs text-muted-foreground mb-1">Fact. Pendientes</p>
                   <p className="text-lg font-bold text-amber-600">{summary.pendingInvoicesCount}</p>
+                  {currentDollarRate > 0 && summary.pendingInvoicesTotal > 0 && (
+                    <p className="text-xs text-amber-500">{formatBs(summary.pendingInvoicesTotal * currentDollarRate)}</p>
+                  )}
                 </div>
               </div>
             </>
@@ -358,24 +405,25 @@ export function AccountsView() {
                   <TableHead>Tipo</TableHead>
                   <TableHead>Descripción</TableHead>
                   <TableHead>Factura</TableHead>
-                  <TableHead className="text-right">Monto</TableHead>
+                  <TableHead className="text-right">Monto (USD)</TableHead>
+                  <TableHead className="text-right">Monto (Bs)</TableHead>
+                  <TableHead className="text-right">Tasa</TableHead>
                   <TableHead>Usuario</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {entries.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                       No hay movimientos registrados
                     </TableCell>
                   </TableRow>
                 ) : (
-                  entries.map((entry: Record<string, unknown>) => {
-                    const entryType = entry.type as string
-                    const isCredit = entryType === 'CREDITO'
+                  entries.map((entry: AccountEntry) => {
+                    const isCredit = entry.type === 'CREDITO'
                     return (
-                      <TableRow key={entry.id as string}>
-                        <TableCell className="text-sm">{formatDate(entry.date as string)}</TableCell>
+                      <TableRow key={entry.id}>
+                        <TableCell className="text-sm">{formatDate(entry.date)}</TableCell>
                         <TableCell>
                           <Badge
                             variant="outline"
@@ -384,12 +432,12 @@ export function AccountsView() {
                               : 'border-emerald-300 text-emerald-700 dark:border-emerald-700 dark:text-emerald-400'
                             }
                           >
-                            {entryType}
+                            {entry.type}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-sm">{(entry.description as string) || '-'}</TableCell>
+                        <TableCell className="text-sm">{entry.description || '-'}</TableCell>
                         <TableCell className="text-sm">
-                          {(entry.invoice as Record<string, unknown>)?.number
+                          {entry.invoice?.number
                             ? (
                               <button
                                 className="text-emerald-600 hover:underline"
@@ -397,15 +445,23 @@ export function AccountsView() {
                                   setCurrentPage('pos')
                                 }}
                               >
-                                {(entry.invoice as Record<string, unknown>).number as string}
+                                {entry.invoice.number}
                               </button>
                             )
                             : '-'}
                         </TableCell>
                         <TableCell className={`text-right font-medium ${isCredit ? 'text-red-600' : 'text-emerald-600'}`}>
-                          {isCredit ? '+' : '-'}{formatCurrency(entry.amount as number)}
+                          {isCredit ? '+' : '-'}{formatCurrency(entry.amount)}
                         </TableCell>
-                        <TableCell className="text-sm">{(entry.user as Record<string, unknown>)?.name as string || '-'}</TableCell>
+                        <TableCell className={`text-right font-medium ${isCredit ? 'text-red-600' : 'text-emerald-600'}`}>
+                          {entry.amountBs > 0
+                            ? `${isCredit ? '+' : '-'}${formatBs(entry.amountBs)}`
+                            : '-'}
+                        </TableCell>
+                        <TableCell className="text-right text-xs text-muted-foreground">
+                          {entry.dollarRate > 0 ? `Bs. ${entry.dollarRate.toFixed(2)}` : '-'}
+                        </TableCell>
+                        <TableCell className="text-sm">{entry.user?.name || '-'}</TableCell>
                       </TableRow>
                     )
                   })
@@ -433,7 +489,8 @@ export function AccountsView() {
                     <TableHead>Número</TableHead>
                     <TableHead>Fecha</TableHead>
                     <TableHead>Estado</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
+                    <TableHead className="text-right">Total (USD)</TableHead>
+                    <TableHead className="text-right">Total (Bs)</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -447,6 +504,11 @@ export function AccountsView() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right font-medium">{formatCurrency(inv.total as number)}</TableCell>
+                      <TableCell className="text-right font-medium">
+                        {currentDollarRate > 0
+                          ? formatBs((inv.total as number) * currentDollarRate)
+                          : '-'}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
