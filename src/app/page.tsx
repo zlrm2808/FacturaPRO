@@ -143,7 +143,6 @@ function AppContent() {
 
   // Hydration: load auth state from localStorage after mount
   const [ready, setReady] = useState(false)
-  const [validating, setValidating] = useState(false)
 
   useEffect(() => {
     hydrate()
@@ -152,21 +151,31 @@ function AppContent() {
   }, [hydrate])
 
   // Server-side token validation: verify the token is still valid on the server
+  // Only run once after hydration when authenticated
   useEffect(() => {
     if (!isAuthenticated) return
 
+    let cancelled = false
+
     const validateToken = async () => {
-      setValidating(true)
       try {
-        await api.get('/auth/me')
+        const res = await fetch('/api/auth/me', {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${useAuthStore.getState().token}`,
+          },
+        })
+        if (!res.ok && res.status === 401 && !cancelled) {
+          // Token is truly invalid (expired, server restart, midnight) - logout
+          useAuthStore.getState().logout()
+        }
       } catch {
-        // If 401, the api client will auto-logout
-      } finally {
-        setValidating(false)
+        // Network error - don't logout, might be temporary
       }
     }
 
     validateToken()
+    return () => { cancelled = true }
   }, [isAuthenticated])
 
   // Midnight check: every 60 seconds, check if the date has changed
@@ -191,7 +200,7 @@ function AppContent() {
     }
   }, [isAuthenticated, checkMidnight])
 
-  if (!ready || validating) {
+  if (!ready) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="animate-pulse text-muted-foreground">Cargando...</div>

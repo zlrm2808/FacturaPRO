@@ -78,3 +78,50 @@ Stage Summary:
 - Auto-logout on 401: API client automatically logs out when any API returns 401
 - Logout audit trail: /api/auth/logout endpoint creates LOGOUT audit log entries
 - Client-side midnight timer: checks every 60 seconds + on tab focus
+
+---
+Task ID: 3
+Agent: Main Agent
+Task: Fix session bug (auto-logout on navigation) and 100% validation
+
+Work Log:
+- Diagnosed ROOT CAUSE: SERVER_INSTANCE_ID = randomUUID() was re-generated on every module re-evaluation by Turbopack HMR, making all existing tokens invalid when any new API route was compiled
+- Fixed /src/lib/auth.ts:
+  - Changed SERVER_INSTANCE_ID to use globalThis persistence: getOrCreateServerInstanceId()
+  - ID now survives module re-evaluations (HMR) within the same process, but changes on actual process restart
+  - Changed getTodayDate() to use UTC (getUTCFullYear/getUTCMonth/getUTCDate) to avoid timezone mismatches between server and client
+  - verifyToken() now calls getOrCreateServerInstanceId() dynamically instead of using stale module-level constant
+- Fixed /src/lib/store.ts:
+  - Changed getTodayDate() to use UTC for consistency with server
+- Fixed /src/lib/api.ts:
+  - Changed auto-logout to only trigger on /auth/* endpoint 401s (not all 401s)
+  - GET/POST: auto-logout only on /auth/ prefix paths
+  - PUT/DELETE: auto-logout on any 401 (these are mutation operations that require valid auth)
+- Fixed /src/app/page.tsx:
+  - Removed "validating" loading state that caused unnecessary re-renders
+  - Changed token validation to use direct fetch() instead of api client (avoids cascading auto-logout)
+  - Added cancellation flag to prevent logout after component unmount
+  - Network errors no longer trigger logout (only 401 from /auth/me)
+- Comprehensive validation results:
+  - Login ✅ (zlrm2808 and admin accounts)
+  - Dashboard ✅ (data loads, dollar rate shows)
+  - POS ✅ (products, client selector, cart all work)
+  - Clientes ✅ (client list loads)
+  - Inventario ✅ (products and categories load)
+  - Estados de Cuenta ✅
+  - Facturas Vencidas ✅
+  - Proveedores ✅
+  - Reportes ✅
+  - Auditoría ✅
+  - Notificaciones ✅
+  - Configuración ✅ (all tabs: licenses, users, dollar rates, company config)
+  - Session persistence ✅ (survives page reload)
+  - Logout ✅ (with audit trail)
+  - All API calls return 200 ✅ (zero 401/500 errors in recent logs)
+
+Stage Summary:
+- CRITICAL BUG FIXED: Session auto-logout caused by Turbopack HMR re-evaluating auth.ts module
+- globalThis persistence ensures SERVER_INSTANCE_ID is stable across HMR re-evaluations
+- UTC dates prevent timezone mismatch between server and client
+- Less aggressive auto-logout: only on auth endpoint 401s, not all API 401s
+- 100% validation complete: all pages load, all APIs return 200, session persists across reloads

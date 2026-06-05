@@ -11,18 +11,15 @@ class ApiClient {
     }
   }
 
-  private handleUnauthorized(res: Response): void {
-    if (res.status === 401) {
-      // Token is invalid/expired - auto logout
-      useAuthStore.getState().logout()
-    }
-  }
-
   async get(path: string): Promise<any> {
     const res = await fetch(`${API_BASE}${path}`, { headers: this.getHeaders() })
     if (!res.ok) {
-      this.handleUnauthorized(res)
-      throw new Error(await res.text())
+      const errorText = await res.text()
+      // Auto-logout only on auth validation endpoint failures
+      if (res.status === 401 && path.startsWith('/auth/')) {
+        useAuthStore.getState().logout()
+      }
+      throw new Error(errorText)
     }
     return res.json()
   }
@@ -34,8 +31,12 @@ class ApiClient {
       body: JSON.stringify(data),
     })
     if (!res.ok) {
-      this.handleUnauthorized(res)
-      throw new Error(await res.text())
+      const errorText = await res.text()
+      // Auto-logout only on auth validation endpoint failures
+      if (res.status === 401 && path.startsWith('/auth/')) {
+        useAuthStore.getState().logout()
+      }
+      throw new Error(errorText)
     }
     return res.json()
   }
@@ -47,8 +48,11 @@ class ApiClient {
       body: JSON.stringify(data),
     })
     if (!res.ok) {
-      this.handleUnauthorized(res)
-      throw new Error(await res.text())
+      const errorText = await res.text()
+      if (res.status === 401) {
+        useAuthStore.getState().logout()
+      }
+      throw new Error(errorText)
     }
     return res.json()
   }
@@ -59,8 +63,11 @@ class ApiClient {
       headers: this.getHeaders(),
     })
     if (!res.ok) {
-      this.handleUnauthorized(res)
-      throw new Error(await res.text())
+      const errorText = await res.text()
+      if (res.status === 401) {
+        useAuthStore.getState().logout()
+      }
+      throw new Error(errorText)
     }
     return res.json()
   }

@@ -4,9 +4,20 @@ import { randomUUID } from 'crypto'
 
 const JWT_SECRET = process.env.JWT_SECRET || 'pos-system-secret-key-2024-secure-default-zlrm'
 
-// Generate a unique server instance ID on startup.
-// When the server restarts, this ID changes, making all existing tokens invalid.
-const SERVER_INSTANCE_ID = randomUUID()
+/**
+ * Server Instance ID - persisted in globalThis to survive module re-evaluations
+ * during development (Turbopack HMR). Only changes when the actual process restarts.
+ */
+const GLOBAL_SID_KEY = '__POS_SERVER_INSTANCE_ID__' as any
+
+function getOrCreateServerInstanceId(): string {
+  if (!(globalThis as any)[GLOBAL_SID_KEY]) {
+    (globalThis as any)[GLOBAL_SID_KEY] = randomUUID()
+  }
+  return (globalThis as any)[GLOBAL_SID_KEY]
+}
+
+const SERVER_INSTANCE_ID = getOrCreateServerInstanceId()
 
 /**
  * Get the current server instance ID (useful for debugging)
@@ -38,13 +49,13 @@ export async function comparePassword(password: string, hash: string): Promise<b
 }
 
 /**
- * Get today's date in YYYY-MM-DD format (local timezone)
+ * Get today's date in YYYY-MM-DD format (UTC to avoid timezone issues between server and client)
  */
 function getTodayDate(): string {
   const now = new Date()
-  const year = now.getFullYear()
-  const month = String(now.getMonth() + 1).padStart(2, '0')
-  const day = String(now.getDate()).padStart(2, '0')
+  const year = now.getUTCFullYear()
+  const month = String(now.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(now.getUTCDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
 }
 
@@ -73,7 +84,9 @@ export function verifyToken(token: string): TokenPayload | null {
     const decoded = jwt.verify(token, JWT_SECRET) as TokenPayload
 
     // Check 1: Server instance ID must match (server restart detection)
-    if (decoded.sid !== SERVER_INSTANCE_ID) {
+    // Use the current (potentially same) instance from globalThis
+    const currentSid = getOrCreateServerInstanceId()
+    if (decoded.sid !== currentSid) {
       return null
     }
 
