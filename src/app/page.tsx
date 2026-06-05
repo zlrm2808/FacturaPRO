@@ -138,11 +138,12 @@ function Header() {
 }
 
 function AppContent() {
-  const { isAuthenticated, hydrate } = useAuthStore()
+  const { isAuthenticated, hydrate, checkMidnight } = useAuthStore()
   const { currentPage } = useAppStore()
 
   // Hydration: load auth state from localStorage after mount
   const [ready, setReady] = useState(false)
+  const [validating, setValidating] = useState(false)
 
   useEffect(() => {
     hydrate()
@@ -150,7 +151,47 @@ function AppContent() {
     return () => cancelAnimationFrame(id)
   }, [hydrate])
 
-  if (!ready) {
+  // Server-side token validation: verify the token is still valid on the server
+  useEffect(() => {
+    if (!isAuthenticated) return
+
+    const validateToken = async () => {
+      setValidating(true)
+      try {
+        await api.get('/auth/me')
+      } catch {
+        // If 401, the api client will auto-logout
+      } finally {
+        setValidating(false)
+      }
+    }
+
+    validateToken()
+  }, [isAuthenticated])
+
+  // Midnight check: every 60 seconds, check if the date has changed
+  useEffect(() => {
+    if (!isAuthenticated) return
+
+    const interval = setInterval(() => {
+      checkMidnight()
+    }, 60000) // Check every 60 seconds
+
+    // Also check when the tab gains focus (user might have left and come back after midnight)
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        checkMidnight()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
+  }, [isAuthenticated, checkMidnight])
+
+  if (!ready || validating) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="animate-pulse text-muted-foreground">Cargando...</div>

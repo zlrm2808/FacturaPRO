@@ -2,6 +2,7 @@
 
 import { useAuthStore, useAppStore } from '@/lib/store'
 import { getRoleLabel } from '@/lib/format'
+import { api } from '@/lib/api'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
@@ -49,6 +50,15 @@ const adminNav: { id: Page; label: string; icon: React.ElementType; roles?: stri
 export function AppSidebar() {
   const { user, logout } = useAuthStore()
   const { currentPage, setCurrentPage, sidebarCollapsed, setSidebarCollapsed } = useAppStore()
+
+  const handleLogout = async () => {
+    try {
+      await api.post('/auth/logout', {})
+    } catch {
+      // Ignore errors - still logout client-side
+    }
+    logout()
+  }
 
   const role = user?.role || 'EMPLEADO'
   const filteredAdminNav = adminNav.filter((item) => !item.roles || item.roles.includes(role))
@@ -144,7 +154,7 @@ export function AppSidebar() {
             variant="ghost"
             size="sm"
             className="flex-1 h-8 text-destructive"
-            onClick={logout}
+            onClick={handleLogout}
             title="Cerrar Sesión"
           >
             <LogOut className="w-4 h-4" />

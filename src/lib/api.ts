@@ -11,9 +11,19 @@ class ApiClient {
     }
   }
 
+  private handleUnauthorized(res: Response): void {
+    if (res.status === 401) {
+      // Token is invalid/expired - auto logout
+      useAuthStore.getState().logout()
+    }
+  }
+
   async get(path: string): Promise<any> {
     const res = await fetch(`${API_BASE}${path}`, { headers: this.getHeaders() })
-    if (!res.ok) throw new Error(await res.text())
+    if (!res.ok) {
+      this.handleUnauthorized(res)
+      throw new Error(await res.text())
+    }
     return res.json()
   }
 
@@ -23,7 +33,10 @@ class ApiClient {
       headers: this.getHeaders(),
       body: JSON.stringify(data),
     })
-    if (!res.ok) throw new Error(await res.text())
+    if (!res.ok) {
+      this.handleUnauthorized(res)
+      throw new Error(await res.text())
+    }
     return res.json()
   }
 
@@ -33,7 +46,10 @@ class ApiClient {
       headers: this.getHeaders(),
       body: JSON.stringify(data),
     })
-    if (!res.ok) throw new Error(await res.text())
+    if (!res.ok) {
+      this.handleUnauthorized(res)
+      throw new Error(await res.text())
+    }
     return res.json()
   }
 
@@ -42,7 +58,10 @@ class ApiClient {
       method: 'DELETE',
       headers: this.getHeaders(),
     })
-    if (!res.ok) throw new Error(await res.text())
+    if (!res.ok) {
+      this.handleUnauthorized(res)
+      throw new Error(await res.text())
+    }
     return res.json()
   }
 }
