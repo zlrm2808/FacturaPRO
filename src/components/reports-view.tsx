@@ -4,11 +4,14 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { formatCurrency, formatBs, formatDate, getStatusColor, getPaymentMethodLabel } from '@/lib/format'
+import { generateReportPDF, generatePriceListPDF } from '@/lib/report-pdf'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Table,
@@ -34,7 +37,6 @@ import {
 } from 'recharts'
 import {
   BarChart3,
-  Printer,
   FileSpreadsheet,
   FileDown,
   DollarSign,
@@ -44,6 +46,8 @@ import {
   TrendingUp,
   ShoppingCart,
   AlertTriangle,
+  Tags,
+  Droplets,
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { toast } from 'sonner'
@@ -56,6 +60,7 @@ const REPORT_TYPES = [
   { id: 'pagos', label: 'Pagos', icon: FileText },
   { id: 'productos-vendidos', label: 'Productos Vendidos', icon: ShoppingCart },
   { id: 'ganancias', label: 'Ganancias', icon: TrendingUp },
+  { id: 'lista-precios', label: 'Lista de Precios', icon: Tags },
 ] as const
 
 type ReportType = (typeof REPORT_TYPES)[number]['id']
@@ -70,12 +75,198 @@ export function ReportsView() {
   const [fromDate, setFromDate] = useState(thirtyDaysAgo)
   const [toDate, setToDate] = useState(today)
 
+  // Price list specific options
+  const [priceCurrency, setPriceCurrency] = useState<'usd' | 'both'>('usd')
+  const [showWatermark, setShowWatermark] = useState(false)
+  const [priceCategory, setPriceCategory] = useState('')
+
+  // Fetch categories for filter
+  const { data: categories } = useQuery({
+    queryKey: ['categories-list'],
+    queryFn: () => api.get('/categories'),
+  })
+
+  const buildReportUrl = () => {
+    let url = `/reports?type=${reportType}&fromDate=${fromDate}&toDate=${toDate}`
+    if (reportType === 'lista-precios') {
+      url += `&currency=${priceCurrency}`
+      if (priceCategory) {
+        url += `&category=${priceCategory}`
+      }
+    }
+    return url
+  }
+
   const { data: report, isLoading } = useQuery({
-    queryKey: ['reports', reportType, fromDate, toDate],
-    queryFn: () =>
-      api.get(`/reports?type=${reportType}&fromDate=${fromDate}&toDate=${toDate}`),
+    queryKey: ['reports', reportType, fromDate, toDate, priceCurrency, priceCategory],
+    queryFn: () => api.get(buildReportUrl()),
     enabled: !!reportType,
   })
+
+  const { data: companyData } = useQuery({
+    queryKey: ['company'],
+    queryFn: () => api.get('/company'),
+  })
+
+  const exportToPDF = () => {
+    if (!report) return
+
+    const company = companyData || { name: 'FacturaPro', copyright: 'Zeus Rodriguez' }
+
+    let title = ''
+    let subtitle = ''
+    let headers: string[] = []
+    let rows: (string | number)[][] = []
+    let summaryCards: { label: string; value: string }[] = []
+    let groupHeaders: { label: string; colspan: number }[] | undefined = undefined
+
+    switch (reportType) {
+      case 'ventas':
+        title = 'Reporte de Ventas'
+        headers = ['Número', 'Fecha', 'Cliente', 'Método', 'Estado', 'Total USD']
+        rows = (report.invoices || []).map((inv: Record<string, unknown>) => [
+          inv.number as string,
+          formatDate(inv.date as string),
+          (inv.client as Record<string, unknown>)?.name as string || '-',
+          getPaymentMethodLabel(inv.paymentMethod as string),
+          inv.status as string,
+          (inv.total as number).toFixed(2),
+        ])
+        summaryCards = [
+          { label: 'Total Facturas', value: String(report.totalInvoices) },
+          { label: 'Monto Total', value: `$${(report.totalAmount as number).toFixed(2)}` },
+          { label: 'ITBIS', value: `$${(report.totalTax as number).toFixed(2)}` },
+          { label: 'Descuentos', value: `$${(report.totalDiscount as number).toFixed(2)}` },
+        ]
+        break
+      case 'inventario':
+        title = 'Reporte de Inventario'
+        headers = ['Código', 'Nombre', 'Categoría', 'Cantidad', 'Mínimo']
+        rows = (report.lowStockItems || []).map((p: Record<string, unknown>) => [
+          p.code as string,
+          p.name as string,
+          p.category as string || '-',
+          p.quantity as number,
+          p.minStock as number,
+        ])
+        summaryCards = [
+          { label: 'Total Productos', value: String(report.totalProducts) },
+          { label: 'Stock Bajo', value: String(report.lowStockCount) },
+          { label: 'Valor Inventario', value: `$${(report.totalValue as number).toFixed(2)}` },
+          { label: 'Costo Inventario', value: `$${(report.totalCostValue as number).toFixed(2)}` },
+        ]
+        break
+      case 'clientes':
+        title = 'Reporte de Clientes'
+        headers = ['Nombre', 'Balance USD', 'Facturas']
+        rows = (report.clientsWithBalance || []).map((c: Record<string, unknown>) => [
+          c.name as string,
+          (c.balance as number).toFixed(2),
+          c.invoiceCount as number,
+        ])
+        summaryCards = [
+          { label: 'Total Clientes', value: String(report.totalClients) },
+          { label: 'Con Balance', value: String(report.clientsWithBalanceCount) },
+          { label: 'Balance Pendiente', value: `$${(report.totalBalanceOutstanding as number).toFixed(2)}` },
+        ]
+        break
+      case 'facturas-vencidas':
+        title = 'Reporte de Facturas Vencidas'
+        headers = ['Número', 'Fecha', 'Cliente', 'Total USD']
+        rows = (report.invoices || []).map((inv: Record<string, unknown>) => [
+          inv.number as string,
+          formatDate(inv.date as string),
+          (inv.client as Record<string, unknown>)?.name as string || '-',
+          (inv.total as number).toFixed(2),
+        ])
+        summaryCards = [
+          { label: 'Facturas Vencidas', value: String(report.count) },
+          { label: 'Monto Vencido', value: `$${(report.totalOverdue as number).toFixed(2)}` },
+        ]
+        break
+      case 'pagos':
+        title = 'Reporte de Pagos'
+        headers = ['Fecha', 'Cliente', 'Método', 'Monto USD']
+        rows = (report.transactions || []).map((t: Record<string, unknown>) => [
+          formatDate(t.date as string),
+          (t.client as Record<string, unknown>)?.name as string || '-',
+          getPaymentMethodLabel(t.paymentMethod as string),
+          (t.amount as number).toFixed(2),
+        ])
+        summaryCards = [
+          { label: 'Total Transacciones', value: String(report.count) },
+          { label: 'Monto Total Pagos', value: `$${(report.totalPayments as number).toFixed(2)}` },
+        ]
+        break
+      case 'productos-vendidos':
+        title = 'Reporte de Productos Vendidos'
+        headers = ['Código', 'Nombre', 'Cantidad', 'Ingresos']
+        rows = (report.topProducts || []).map((p: Record<string, unknown>) => [
+          (p.product as Record<string, unknown>)?.code as string,
+          (p.product as Record<string, unknown>)?.name as string,
+          p.totalQuantity as number,
+          `$${(p.totalRevenue as number).toFixed(2)}`,
+        ])
+        break
+      case 'ganancias':
+        title = 'Reporte de Ganancias'
+        headers = ['Concepto', 'Monto USD']
+        rows = [
+          ['Ingresos Totales', `$${(report.totalRevenue as number).toFixed(2)}`],
+          ['Costo Total', `$${(report.totalCost as number).toFixed(2)}`],
+          ['Ganancia', `$${(report.profit as number).toFixed(2)}`],
+          ['Margen', `${report.profitMargin}%`],
+        ]
+        summaryCards = [
+          { label: 'Ingresos', value: `$${(report.totalRevenue as number).toFixed(2)}` },
+          { label: 'Costos', value: `$${(report.totalCost as number).toFixed(2)}` },
+          { label: 'Ganancia', value: `$${(report.profit as number).toFixed(2)}` },
+          { label: 'Margen', value: `${report.profitMargin}%` },
+        ]
+        break
+      case 'lista-precios': {
+        // Use dedicated price list PDF generator
+        const priceListDoc = generatePriceListPDF(company, {
+          products: (report.products || []).map((p: Record<string, unknown>) => ({
+            id: p.id as string,
+            code: p.code as string,
+            name: p.name as string,
+            salePrice: p.salePrice as number,
+            salePriceBs: p.salePriceBs as number,
+            category: p.category as string || 'Sin categoría',
+            unit: (p as any).unit as string || 'Unidad',
+          })),
+          byCategory: report.byCategory || {},
+          dollarRate: report.dollarRate as number || 0,
+          totalProducts: report.totalProducts as number || 0,
+          categories: report.categories as number || 0,
+          currency: priceCurrency,
+        }, {
+          watermark: showWatermark,
+        })
+        priceListDoc.save(`reporte-lista-precios.pdf`)
+        toast.success('PDF descargado correctamente')
+        return
+      }
+      default:
+        return
+    }
+
+    const doc = generateReportPDF(company, {
+      title,
+      subtitle,
+      fromDate,
+      toDate,
+      headers,
+      rows,
+      summaryCards,
+      watermark: showWatermark,
+      groupHeaders,
+    })
+
+    doc.save(`reporte-${reportType}.pdf`)
+    toast.success('PDF descargado correctamente')
+  }
 
   const exportToExcel = () => {
     if (!report) return
@@ -166,6 +357,22 @@ export function ReportsView() {
           Ganancia: report.profit,
           Margen: `${report.profitMargin}%`,
         }]
+      case 'lista-precios':
+        if (priceCurrency === 'both') {
+          return (report.products || []).map((p: Record<string, unknown>) => ({
+            Codigo: p.code,
+            Nombre: p.name,
+            Categoria: p.category || '-',
+            PrecioUSD: p.salePrice,
+            PrecioBs: (p.salePriceBs as number) > 0 ? p.salePriceBs : '-',
+          }))
+        }
+        return (report.products || []).map((p: Record<string, unknown>) => ({
+          Codigo: p.code,
+          Nombre: p.name,
+          Categoria: p.category || '-',
+          PrecioUSD: p.salePrice,
+        }))
       default:
         return []
     }
@@ -229,6 +436,16 @@ export function ReportsView() {
               valueColor={report.profit >= 0 ? 'text-emerald-600' : 'text-red-600'}
             />
             <SummaryCard title="Margen" value={`${report.profitMargin}%`} icon={BarChart3} />
+          </div>
+        )
+      case 'lista-precios':
+        return (
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            <SummaryCard title="Total Productos" value={report.totalProducts} icon={Package} />
+            <SummaryCard title="Categorías" value={report.categories} icon={Tags} />
+            {(report.dollarRate as number) > 0 && (
+              <SummaryCard title="Tasa BCV" value={`Bs. ${(report.dollarRate as number).toFixed(2)}`} icon={DollarSign} />
+            )}
           </div>
         )
       default:
@@ -365,6 +582,33 @@ export function ReportsView() {
                   <YAxis type="category" dataKey="name" width={120} />
                   <Tooltip />
                   <Bar dataKey="cantidad" fill="#10b981" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        )
+      }
+      case 'lista-precios': {
+        // Bar chart showing product count by category
+        const byCategory = report.byCategory || {}
+        const chartData = Object.entries(byCategory).map(([cat, items]) => ({
+          name: cat,
+          cantidad: (items as Record<string, unknown>[]).length,
+        }))
+        if (chartData.length === 0) return null
+        return (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Productos por Categoría</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" />
+                  <YAxis />
+                  <Tooltip />
+                  <Bar dataKey="cantidad" fill="#10b981" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>
@@ -590,6 +834,71 @@ export function ReportsView() {
         )
       case 'ganancias':
         return null
+      case 'lista-precios': {
+        const isBoth = priceCurrency === 'both'
+        const byCategory = report.byCategory || {}
+        const categoryEntries = Object.entries(byCategory) as [string, Record<string, unknown>[]][]
+
+        if (categoryEntries.length === 0) {
+          return (
+            <Card>
+              <CardContent className="p-8 text-center text-muted-foreground">
+                No hay productos activos para mostrar
+              </CardContent>
+            </Card>
+          )
+        }
+
+        return (
+          <div className="space-y-4">
+            {categoryEntries.map(([catName, products]) => (
+              <Card key={catName} className="overflow-hidden border-l-4 border-l-emerald-500">
+                <CardHeader className="pb-2 bg-emerald-50 dark:bg-emerald-900/20">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Package className="w-4 h-4 text-emerald-600" />
+                    {catName}
+                    <Badge variant="secondary" className="ml-2">{products.length}</Badge>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <ScrollArea className="max-h-64">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-emerald-600 hover:bg-emerald-600">
+                          <TableHead className="text-white w-12">N°</TableHead>
+                          <TableHead className="text-white">DESCRIPCION DE PRODUCTO</TableHead>
+                          <TableHead className="text-white text-center w-20">UNIDAD</TableHead>
+                          <TableHead className="text-white text-right w-28">Precio USD</TableHead>
+                          {isBoth && (
+                            <TableHead className="text-white text-right w-32">Precio Bs</TableHead>
+                          )}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {products.map((p: Record<string, unknown>, idx: number) => (
+                          <TableRow key={p.id as string}>
+                            <TableCell className="font-medium text-muted-foreground">{idx + 1}</TableCell>
+                            <TableCell className="font-medium">{p.name as string}</TableCell>
+                            <TableCell className="text-center text-muted-foreground text-xs">Unidad</TableCell>
+                            <TableCell className="text-right font-semibold text-emerald-600 dark:text-emerald-400">
+                              {formatCurrency(p.salePrice as number)}
+                            </TableCell>
+                            {isBoth && (
+                              <TableCell className="text-right text-emerald-600 dark:text-emerald-400">
+                                {(p.salePriceBs as number) > 0 ? formatBs(p.salePriceBs as number) : '-'}
+                              </TableCell>
+                            )}
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )
+      }
       default:
         return null
     }
@@ -603,10 +912,30 @@ export function ReportsView() {
           <h1 className="text-2xl font-bold">Reportes</h1>
           <p className="text-muted-foreground">Genera reportes detallados del sistema</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => window.print()}>
-            <Printer className="w-4 h-4 mr-2" />
-            Exportar PDF
+        <div className="flex gap-2 flex-wrap">
+          {reportType === 'lista-precios' && (
+            <div className="flex gap-1 mr-2">
+              <Button
+                size="sm"
+                variant={priceCurrency === 'usd' ? 'default' : 'outline'}
+                onClick={() => setPriceCurrency('usd')}
+                className={priceCurrency === 'usd' ? 'bg-emerald-600 hover:bg-emerald-700' : ''}
+              >
+                Solo USD
+              </Button>
+              <Button
+                size="sm"
+                variant={priceCurrency === 'both' ? 'default' : 'outline'}
+                onClick={() => setPriceCurrency('both')}
+                className={priceCurrency === 'both' ? 'bg-emerald-600 hover:bg-emerald-700' : ''}
+              >
+                USD + Bs
+              </Button>
+            </div>
+          )}
+          <Button variant="outline" onClick={exportToPDF} disabled={!report}>
+            <FileDown className="w-4 h-4 mr-2" />
+            {reportType === 'lista-precios' ? 'Imprimir Lista' : 'Exportar PDF'}
           </Button>
           <Button variant="outline" onClick={exportToExcel}>
             <FileSpreadsheet className="w-4 h-4 mr-2" />
@@ -623,14 +952,66 @@ export function ReportsView() {
       <Card>
         <CardContent className="p-4">
           <div className="flex flex-col sm:flex-row gap-4">
-            <div className="flex-1 space-y-1">
-              <Label className="text-xs">Desde</Label>
-              <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
-            </div>
-            <div className="flex-1 space-y-1">
-              <Label className="text-xs">Hasta</Label>
-              <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
-            </div>
+            {/* Date filters - hidden for price list */}
+            {reportType !== 'lista-precios' && (
+              <>
+                <div className="flex-1 space-y-1">
+                  <Label className="text-xs">Desde</Label>
+                  <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+                </div>
+                <div className="flex-1 space-y-1">
+                  <Label className="text-xs">Hasta</Label>
+                  <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+                </div>
+              </>
+            )}
+
+            {/* Price list specific filters */}
+            {reportType === 'lista-precios' && (
+              <>
+                <div className="flex-1 space-y-1">
+                  <Label className="text-xs">Moneda</Label>
+                  <Select value={priceCurrency} onValueChange={(v) => setPriceCurrency(v as 'usd' | 'both')}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="usd">Solo USD</SelectItem>
+                      <SelectItem value="both">USD y Bolívares</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex-1 space-y-1">
+                  <Label className="text-xs">Categoría</Label>
+                  <Select value={priceCategory} onValueChange={setPriceCategory}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Todas las categorías" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todas las categorías</SelectItem>
+                      {(categories as Record<string, unknown>[] || []).map((cat: Record<string, unknown>) => (
+                        <SelectItem key={cat.id as string} value={cat.id as string}>
+                          {cat.name as string}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-end gap-2 pb-1">
+                  <div className="flex items-center space-x-2 bg-muted/50 px-3 py-2 rounded-lg border">
+                    <Checkbox
+                      id="watermark"
+                      checked={showWatermark}
+                      onCheckedChange={(checked) => setShowWatermark(checked as boolean)}
+                    />
+                    <Label htmlFor="watermark" className="text-xs flex items-center gap-1.5 cursor-pointer">
+                      <Droplets className="w-3.5 h-3.5 text-blue-500" />
+                      Marca de agua
+                    </Label>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </CardContent>
       </Card>

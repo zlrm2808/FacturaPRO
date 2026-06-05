@@ -308,7 +308,14 @@ export function ClientsView() {
               <TableBody>
                 {paginatedClients.map((client) => (
                   <TableRow key={client.id}>
-                    <TableCell className="font-medium">{client.name}</TableCell>
+                    <TableCell className="font-medium">
+                      <button
+                        className="hover:text-emerald-600 dark:hover:text-emerald-400 hover:underline transition-colors text-left"
+                        onClick={() => handleViewDetails(client)}
+                      >
+                        {client.name}
+                      </button>
+                    </TableCell>
                     <TableCell className="hidden md:table-cell">
                       {client.phone || '-'}
                     </TableCell>

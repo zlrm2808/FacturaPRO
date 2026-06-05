@@ -93,14 +93,35 @@ export async function PUT(
     }
 
     if (action === 'receive') {
-      // Receive purchase order: add stock, create stock movements
+      // Receive purchase order: add stock, create stock movements, calculate weighted average cost
       const purchaseOrder = await db.$transaction(async (tx) => {
-        // For each item, add received quantity to product stock and create stock movement
+        // For each item, add received quantity to product stock, calculate weighted avg cost, create stock movement
         for (const item of existing.items) {
-          // Update product stock
+          const product = await tx.product.findUnique({
+            where: { id: item.productId },
+          })
+          if (!product) continue
+
+          const currentQty = product.quantity
+          const currentAvgCost = product.averageCost
+          const newQty = item.quantity
+          const newUnitCost = item.unitPrice
+
+          // Calculate weighted average cost (costo promedio ponderado)
+          // Formula: (currentQty * currentAvgCost + newQty * newUnitCost) / (currentQty + newQty)
+          const totalQty = currentQty + newQty
+          const newAverageCost = totalQty > 0
+            ? (currentQty * currentAvgCost + newQty * newUnitCost) / totalQty
+            : newUnitCost
+
+          // Update product: increment stock, update averageCost and last purchase price
           await tx.product.update({
             where: { id: item.productId },
-            data: { quantity: { increment: item.quantity } },
+            data: {
+              quantity: { increment: item.quantity },
+              averageCost: Math.round(newAverageCost * 100) / 100,
+              purchasePrice: newUnitCost, // Update last purchase price
+            },
           })
 
           // Update purchase order item received count
@@ -109,12 +130,13 @@ export async function PUT(
             data: { received: item.quantity },
           })
 
-          // Create stock movement (ENTRADA) with supplierId
+          // Create stock movement (ENTRADA) with supplierId and unitCost
           await tx.stockMovement.create({
             data: {
               productId: item.productId,
               type: 'ENTRADA',
               quantity: item.quantity,
+              unitCost: newUnitCost,
               reason: `Recepción de orden de compra ${existing.number}`,
               reference: existing.number,
               supplierId: existing.supplierId,

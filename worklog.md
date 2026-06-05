@@ -1,20 +1,38 @@
 ---
 Task ID: 1
-Agent: Main
-Task: Fix dashboard internal server error
+Agent: Main Agent
+Task: Fix Turbopack runtime error and restore price list report
 
 Work Log:
-- Diagnosed the error: `db.dollarRate` was undefined because Prisma client wasn't regenerated after adding the DollarRate model
-- Ran `bun run db:push` to regenerate the Prisma client and sync the database
-- Verified the dashboard API returns 200 with valid data (salesToday, totalClients, dollarRate, etc.)
-- Fixed the WhatsApp phone format in overdue-view.tsx to use Venezuelan country code (+58) instead of Dominican Republic
-- Confirmed all API routes properly use getEffectiveDollarRate for USD/VES conversion
-- All views (dashboard, POS, clients, accounts, overdue, suppliers, reports) already display amounts in both USD and Bolívares
+- Analyzed uploaded images showing desired price list report layout
+- Identified Turbopack panic caused by corrupted cache and permission issues with /scripts directory
+- Simplified next.config.ts to remove experimental turbo config that was causing issues
+- Cleared all .next cache and restarted dev server - now returning 200 OK
+- Rewrote /src/lib/report-pdf.ts with:
+  - New `generatePriceListPDF()` function matching the screenshot design
+  - Centered company logo with aspect ratio preservation via `addImageKeepAspectRatio()`
+  - Centered company name, slogan/tagline, and report title
+  - Products grouped by category with green left border
+  - Table columns: N°, DESCRIPCION DE PRODUCTO, UNIDAD, Precio USD, Precio Bs
+  - Bolivares prices in green text with proper formatting (Bs.S 67.037,23)
+  - Watermark drawn BEFORE content (behind text) with 0.15 opacity (very faint)
+  - Logo aspect ratio maintained by calculating width/height ratio before adding image
+- Updated /src/components/reports-view.tsx:
+  - Added `generatePriceListPDF` import
+  - Price list export uses dedicated PDF generator
+  - Updated HTML table to show N°, DESCRIPCION DE PRODUCTO, UNIDAD, Precio USD, Precio Bs columns
+  - Added currency toggle buttons (Solo USD / USD + Bs) in header area
+  - Changed "Exportar PDF" to "Imprimir Lista" for price list
+  - Category cards have green left border and emerald header background
+  - Table header uses emerald green background with white text
+- Added `slogan` field to CompanyConfig Prisma model
+- Updated company API to handle slogan field
+- Updated settings view with slogan input field
+- Verified with Agent Browser: page loads, login works, price list shows correctly
 
 Stage Summary:
-- Dashboard error fixed by regenerating Prisma client
-- DollarRate model already existed in schema with proper fields (date, officialRate, parallelRate, source)
-- Exchange rate API integration already complete: ve.dolarapi.com → fetchAndSaveDollarRate() → DollarRate table
-- Fallback logic already implemented: if no rate for date, uses last available official rate
-- All transaction views display dual currency (USD + Bs)
-- WhatsApp phone format updated for Venezuela (+58)
+- Turbopack error fixed by simplifying next.config.ts and clearing cache
+- Price list report now matches the user's reference images
+- Logo maintains aspect ratio in PDF reports
+- Watermark renders behind content at very faint opacity (0.15)
+- All 3 user issues resolved: Turbopack error, report layout, logo scaling

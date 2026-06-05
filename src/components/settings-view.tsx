@@ -31,6 +31,16 @@ import {
   DialogClose,
 } from '@/components/ui/dialog'
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -51,6 +61,9 @@ import {
   Shield,
   DollarSign,
   Loader2,
+  Trash2,
+  Upload,
+  Image as ImageIcon,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -191,6 +204,67 @@ export function SettingsView() {
     const diff = exp.getTime() - now.getTime()
     return Math.ceil(diff / (1000 * 60 * 60 * 24))
   }
+
+  // ===== COMPANY CONFIG =====
+  const { data: companyData, isLoading: companyLoading } = useQuery({
+    queryKey: ['company'],
+    queryFn: () => api.get('/company'),
+  })
+
+  const [companyForm, setCompanyForm] = useState<Record<string, string> | null>(null)
+
+  // Derive form values: use local edits if any, otherwise from server data
+  const formValues = companyForm ?? {
+    name: (companyData as Record<string, unknown>)?.name as string || '',
+    rnc: (companyData as Record<string, unknown>)?.rnc as string || '',
+    address: (companyData as Record<string, unknown>)?.address as string || '',
+    phone: (companyData as Record<string, unknown>)?.phone as string || '',
+    email: (companyData as Record<string, unknown>)?.email as string || '',
+    ncfSequence: (companyData as Record<string, unknown>)?.ncfSequence as string || '',
+    taxRate: String(((companyData as Record<string, unknown>)?.taxRate as number) ?? 16),
+    copyright: (companyData as Record<string, unknown>)?.copyright as string || 'Zeus Rodriguez',
+    slogan: (companyData as Record<string, unknown>)?.slogan as string || '',
+  }
+
+  const saveCompanyMutation = useMutation({
+    mutationFn: (data: any) => api.put('/company', data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['company'] })
+      toast.success('Configuración guardada correctamente')
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Error al guardar configuración')
+    },
+  })
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 500000) {
+      toast.error('El logo debe ser menor a 500KB')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      saveCompanyMutation.mutate({ logo: reader.result as string })
+    }
+    reader.readAsDataURL(file)
+  }
+
+  // ===== PURGE TEST DATA =====
+  const [purgeDialogOpen, setPurgeDialogOpen] = useState(false)
+
+  const purgeDataMutation = useMutation({
+    mutationFn: () => api.post('/system/purge-test-data', {}),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries()
+      toast.success(data.message || 'Datos de prueba eliminados correctamente')
+      setPurgeDialogOpen(false)
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Error al eliminar datos de prueba')
+    },
+  })
 
   return (
     <div className="p-6 space-y-6">
@@ -648,40 +722,175 @@ export function SettingsView() {
 
         {/* ===== CONFIGURACIÓN TAB ===== */}
         <TabsContent value="config" className="space-y-4 mt-4">
+          {/* Company Configuration */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Building2 className="w-5 h-5" />
-                Información de la Empresa
+                Configuración de la Empresa
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-muted-foreground text-xs">Nombre de la Empresa</Label>
-                  <p className="font-medium">FacturaPro</p>
+            <CardContent className="space-y-6">
+              {companyLoading ? (
+                <div className="animate-pulse space-y-4">
+                  {[1, 2, 3, 4].map((i) => (
+                    <div key={i} className="h-10 bg-muted rounded" />
+                  ))}
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-muted-foreground text-xs">RNC</Label>
-                  <p className="font-medium">N/A</p>
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-muted-foreground text-xs">Secuencia NCF</Label>
-                  <p className="font-medium">B0100000001</p>
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-muted-foreground text-xs">Tasa IVA</Label>
-                  <p className="font-medium">16%</p>
-                </div>
-              </div>
-              <Separator />
-              <p className="text-sm text-muted-foreground">
-                La configuración de la empresa se puede modificar editando los valores del sistema.
-                Contacte al administrador para realizar cambios.
-              </p>
+              ) : (
+                <>
+                  {/* Logo */}
+                  <div className="flex items-center gap-4">
+                    <div className="flex-shrink-0">
+                      {companyData?.logo ? (
+                        <img
+                          src={companyData.logo}
+                          alt="Logo de la empresa"
+                          className="w-16 h-16 rounded-lg object-cover border"
+                        />
+                      ) : (
+                        <div className="w-16 h-16 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center border">
+                          <span className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+                            {(formValues.name || 'F').charAt(0).toUpperCase()}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <Label className="text-sm text-muted-foreground">Logo de la Empresa</Label>
+                      <p className="text-xs text-muted-foreground mb-2">PNG, JPG o SVG. Máximo 500KB.</p>
+                      <label className="inline-flex items-center gap-2 cursor-pointer rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background hover:bg-accent hover:text-accent-foreground">
+                        <Upload className="w-4 h-4" />
+                        Subir Logo
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleLogoUpload}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  {/* Form Fields */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="companyName">Nombre de la Empresa</Label>
+                      <Input
+                        id="companyName"
+                        value={formValues.name}
+                        onChange={(e) => setCompanyForm({ ...formValues, name: e.target.value })}
+                        placeholder="FacturaPro"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="companyRnc">RNC</Label>
+                      <Input
+                        id="companyRnc"
+                        value={formValues.rnc}
+                        onChange={(e) => setCompanyForm({ ...formValues, rnc: e.target.value })}
+                        placeholder="RNC de la empresa"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="companyAddress">Dirección</Label>
+                      <Input
+                        id="companyAddress"
+                        value={formValues.address}
+                        onChange={(e) => setCompanyForm({ ...formValues, address: e.target.value })}
+                        placeholder="Dirección de la empresa"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="companyPhone">Teléfono</Label>
+                      <Input
+                        id="companyPhone"
+                        value={formValues.phone}
+                        onChange={(e) => setCompanyForm({ ...formValues, phone: e.target.value })}
+                        placeholder="+58 xxx-xxxxxxx"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="companyEmail">Email</Label>
+                      <Input
+                        id="companyEmail"
+                        type="email"
+                        value={formValues.email}
+                        onChange={(e) => setCompanyForm({ ...formValues, email: e.target.value })}
+                        placeholder="contacto@empresa.com"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="companyNcf">Secuencia NCF</Label>
+                      <Input
+                        id="companyNcf"
+                        value={formValues.ncfSequence}
+                        onChange={(e) => setCompanyForm({ ...formValues, ncfSequence: e.target.value })}
+                        placeholder="B0100000001"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="companyTaxRate">Tasa IVA (%)</Label>
+                      <Input
+                        id="companyTaxRate"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="100"
+                        value={formValues.taxRate}
+                        onChange={(e) => setCompanyForm({ ...formValues, taxRate: e.target.value })}
+                        placeholder="16"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="companySlogan">Lema / Eslogan</Label>
+                      <Input
+                        id="companySlogan"
+                        value={formValues.slogan}
+                        onChange={(e) => setCompanyForm({ ...formValues, slogan: e.target.value })}
+                        placeholder="CALIDAD Y SEGURIDAD AL POR MAYOR"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="companyCopyright">Copyright</Label>
+                      <Input
+                        id="companyCopyright"
+                        value={formValues.copyright}
+                        onChange={(e) => setCompanyForm({ ...formValues, copyright: e.target.value })}
+                        placeholder="Zeus Rodriguez"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Save Button */}
+                  <div className="flex justify-end">
+                    <Button
+                      onClick={() => saveCompanyMutation.mutate({
+                        name: formValues.name,
+                        rnc: formValues.rnc,
+                        address: formValues.address,
+                        phone: formValues.phone,
+                        email: formValues.email,
+                        ncfSequence: formValues.ncfSequence,
+                        taxRate: parseFloat(formValues.taxRate) || 16,
+                        copyright: formValues.copyright,
+                        slogan: formValues.slogan,
+                      })}
+                      disabled={saveCompanyMutation.isPending}
+                      className="bg-emerald-600 hover:bg-emerald-700"
+                    >
+                      {saveCompanyMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                      Guardar Configuración
+                    </Button>
+                  </div>
+                </>
+              )}
             </CardContent>
           </Card>
 
+          {/* System Info */}
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Información del Sistema</CardTitle>
@@ -706,9 +915,61 @@ export function SettingsView() {
                     {licenseStatus?.active ? 'Activa' : 'Inactiva'}
                   </span>
                 </div>
+                <div className="md:col-span-2">
+                  <span className="text-muted-foreground">Copyright:</span>{' '}
+                  <span className="font-medium">{formValues.copyright || 'Zeus Rodriguez'}</span>
+                </div>
               </div>
             </CardContent>
           </Card>
+
+          {/* Danger Zone - Only for DESARROLLADOR */}
+          {isDesarrollador && (
+            <Card className="border-red-200 dark:border-red-800">
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2 text-red-600 dark:text-red-400">
+                  <Trash2 className="w-5 h-5" />
+                  Zona de Peligro
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Eliminar todos los datos de prueba del sistema. Se preservarán: usuarios, licencias, tasas del dólar y configuración de la empresa.
+                </p>
+                <Button
+                  variant="destructive"
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                  onClick={() => setPurgeDialogOpen(true)}
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Eliminar Datos de Prueba
+                </Button>
+
+                <AlertDialog open={purgeDialogOpen} onOpenChange={setPurgeDialogOpen}>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>¿Eliminar todos los datos de prueba?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Esta acción eliminará TODOS los datos de prueba del sistema (clientes, productos, facturas, órdenes de compra, movimientos de stock, etc.).
+                        Se preservarán: usuarios, licencias, tasas del dólar y configuración de la empresa.
+                        Esta acción NO se puede deshacer.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => purgeDataMutation.mutate()}
+                        disabled={purgeDataMutation.isPending}
+                        className="bg-red-600 hover:bg-red-700 text-white"
+                      >
+                        {purgeDataMutation.isPending ? 'Eliminando...' : 'Sí, eliminar todo'}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
       </Tabs>
     </div>
@@ -719,13 +980,17 @@ function DollarRatesSection() {
   const queryClient = useQueryClient()
   const { user } = useAuthStore()
 
+  const [manualOfficialRate, setManualOfficialRate] = useState('')
+  const [manualParallelRate, setManualParallelRate] = useState('')
+  const [manualDate, setManualDate] = useState(new Date().toISOString().split('T')[0])
+
   const { data: ratesData, isLoading } = useQuery({
     queryKey: ['dollar-rates-list'],
     queryFn: () => api.get('/dollar-rates'),
   })
 
   const fetchRateMutation = useMutation({
-    mutationFn: () => api.post('/dollar-rates'),
+    mutationFn: () => api.post('/dollar-rates', {}),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['dollar-rates-list'] })
       queryClient.invalidateQueries({ queryKey: ['header-dollar-rate'] })
@@ -734,6 +999,22 @@ function DollarRatesSection() {
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Error al actualizar tasa desde la API')
+    },
+  })
+
+  const manualRateMutation = useMutation({
+    mutationFn: (data: { officialRate: number; parallelRate?: number; date: string }) =>
+      api.put('/dollar-rates', data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['dollar-rates-list'] })
+      queryClient.invalidateQueries({ queryKey: ['header-dollar-rate'] })
+      queryClient.invalidateQueries({ queryKey: ['dollar-rate-today'] })
+      setManualOfficialRate('')
+      setManualParallelRate('')
+      toast.success('Tasa guardada correctamente')
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Error al guardar tasa manual')
     },
   })
 
@@ -807,6 +1088,68 @@ function DollarRatesSection() {
           </p>
         </CardContent>
       </Card>
+
+      {/* Manual Rate Entry */}
+      {isAdmin && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Pencil className="w-4 h-4" />
+              Ingresar Tasa Manual
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Use esta opción cuando no tenga acceso a internet para obtener la tasa automáticamente
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Fecha</Label>
+                <Input
+                  type="date"
+                  value={manualDate}
+                  onChange={(e) => setManualDate(e.target.value)}
+                  max={new Date().toISOString().split('T')[0]}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Tasa Oficial BCV (Bs/USD)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  placeholder="Ej: 36.50"
+                  value={manualOfficialRate}
+                  onChange={(e) => setManualOfficialRate(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Tasa Paralela (Bs/USD)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  placeholder="Opcional"
+                  value={manualParallelRate}
+                  onChange={(e) => setManualParallelRate(e.target.value)}
+                />
+              </div>
+            </div>
+            <Button
+              onClick={() => manualRateMutation.mutate({
+                officialRate: parseFloat(manualOfficialRate),
+                parallelRate: manualParallelRate ? parseFloat(manualParallelRate) : undefined,
+                date: manualDate,
+              })}
+              disabled={!manualOfficialRate || parseFloat(manualOfficialRate) <= 0 || manualRateMutation.isPending}
+              className="bg-emerald-600 hover:bg-emerald-700 gap-2"
+            >
+              {manualRateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <DollarSign className="h-4 w-4" />}
+              Guardar Tasa Manual
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Rate History */}
       <Card>

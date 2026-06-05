@@ -89,7 +89,8 @@ model Product {
   code           String   @unique
   name           String
   description    String?
-  purchasePrice  Float    @default(0)
+  purchasePrice  Float    @default(0) // Last purchase price
+  averageCost    Float    @default(0) // Weighted average cost (costo promedio ponderado)
   salePrice      Float    @default(0)
   quantity       Int      @default(0)
   minStock       Int      @default(5)
@@ -110,6 +111,7 @@ model StockMovement {
   productId String
   type      String   // ENTRADA, SALIDA
   quantity  Int
+  unitCost  Float    @default(0) // Cost per unit at time of movement
   reason    String?
   reference String?
   createdAt DateTime @default(now())
@@ -287,4 +289,21 @@ model Transaction {
 
   invoiceId String?
   invoice   Invoice? @relation(fields: [invoiceId], references: [id])
+}
+
+// ==================== COMPANY CONFIGURATION ====================
+
+model CompanyConfig {
+  id          String  @id @default(cuid())
+  name        String  @default("FacturaPro")
+  rnc         String?
+  address     String?
+  phone       String?
+  email       String?
+  logo        String? // Base64 encoded logo
+  slogan      String? // Company tagline/slogan for reports
+  ncfSequence String  @default("B0100000001")
+  taxRate     Float   @default(16)
+  copyright   String  @default("Zeus Rodriguez")
+  updatedAt   DateTime @updatedAt
 }

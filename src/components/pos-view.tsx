@@ -21,14 +21,6 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import {
-  Command,
-  CommandInput,
-  CommandList,
-  CommandEmpty,
-  CommandGroup,
-  CommandItem,
-} from '@/components/ui/command'
-import {
   Popover,
   PopoverContent,
   PopoverTrigger,
@@ -169,7 +161,7 @@ export function PosView() {
   })
 
   // Fetch clients
-  const { data: clients = [] } = useQuery<Client[]>({
+  const { data: clients = [], isLoading: clientsLoading } = useQuery<Client[]>({
     queryKey: ['clients', clientSearch],
     queryFn: () => {
       const params = new URLSearchParams()
@@ -523,37 +515,52 @@ export function PosView() {
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="p-0 w-[var(--radix-popover-trigger-width)]" align="start">
-                      <Command>
-                        <CommandInput
-                          placeholder="Buscar cliente..."
-                          value={clientSearch}
-                          onValueChange={setClientSearch}
-                        />
-                        <CommandList>
-                          <CommandEmpty>No se encontró cliente</CommandEmpty>
-                          <CommandGroup>
-                            <CommandItem
-                              onSelect={() => {
-                                setSelectedClientId(null)
-                                setSelectedClientName('')
-                                setClientPopoverOpen(false)
-                              }}
-                              className="text-muted-foreground"
-                            >
-                              <X className="h-3 w-3 mr-2" />
-                              Sin cliente (Consumidor)
-                            </CommandItem>
-                            {clients.map((client) => (
-                              <CommandItem
+                      <div className="p-2">
+                        <div className="relative">
+                          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                          <Input
+                            placeholder="Buscar cliente..."
+                            value={clientSearch}
+                            onChange={(e) => setClientSearch(e.target.value)}
+                            className="pl-8 h-8 text-sm"
+                          />
+                        </div>
+                      </div>
+                      <ScrollArea className="max-h-52">
+                        <div className="p-1">
+                          <div
+                            onClick={() => {
+                              setSelectedClientId(null)
+                              setSelectedClientName('')
+                              setClientPopoverOpen(false)
+                              setClientSearch('')
+                            }}
+                            className="flex items-center px-2 py-1.5 text-sm rounded-sm cursor-pointer hover:bg-accent hover:text-accent-foreground text-muted-foreground"
+                          >
+                            <X className="h-3 w-3 mr-2" />
+                            Sin cliente (Consumidor)
+                          </div>
+                          {clientsLoading ? (
+                            <div className="flex items-center justify-center py-4">
+                              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                            </div>
+                          ) : clients.length === 0 && clientSearch ? (
+                            <div className="px-2 py-4 text-center text-sm text-muted-foreground">
+                              No se encontró cliente
+                            </div>
+                          ) : (
+                            clients.map((client) => (
+                              <div
                                 key={client.id}
-                                onSelect={() => {
+                                onClick={() => {
                                   setSelectedClientId(client.id)
                                   setSelectedClientName(client.name)
                                   setClientPopoverOpen(false)
                                   setClientSearch('')
                                 }}
+                                className="flex items-center px-2 py-1.5 text-sm rounded-sm cursor-pointer hover:bg-accent hover:text-accent-foreground"
                               >
-                                <User className="h-3 w-3 mr-2" />
+                                <User className="h-3 w-3 mr-2 shrink-0" />
                                 <div className="flex-1 min-w-0">
                                   <span className="truncate">{client.name}</span>
                                   {client.balance > 0 && (
@@ -562,11 +569,11 @@ export function PosView() {
                                     </Badge>
                                   )}
                                 </div>
-                              </CommandItem>
-                            ))}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </ScrollArea>
                     </PopoverContent>
                   </Popover>
                 </div>

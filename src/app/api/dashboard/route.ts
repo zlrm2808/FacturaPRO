@@ -102,7 +102,7 @@ export async function GET(request: Request) {
         orderBy: { date: 'desc' },
         include: {
           user: { select: { name: true } },
-          client: { select: { name: true } },
+          client: { select: { id: true, name: true } },
         },
       }),
 

@@ -104,13 +104,15 @@ export async function POST(request: Request) {
 
     const productQuantity = quantity ?? 0
     const productMinStock = minStock ?? 5
+    const productPurchasePrice = purchasePrice ?? 0
 
     const product = await db.product.create({
       data: {
         code: code.trim(),
         name: name.trim(),
         description: description?.trim() || null,
-        purchasePrice: purchasePrice ?? 0,
+        purchasePrice: productPurchasePrice,
+        averageCost: productPurchasePrice, // Initial average cost equals purchase price
         salePrice: salePrice,
         quantity: productQuantity,
         minStock: productMinStock,
@@ -126,6 +128,7 @@ export async function POST(request: Request) {
           productId: product.id,
           type: 'ENTRADA',
           quantity: productQuantity,
+          unitCost: productPurchasePrice,
           reason: 'Stock inicial',
           reference: `PRODUCT-${product.id}`,
         },

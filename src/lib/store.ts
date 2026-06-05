@@ -17,10 +17,12 @@ interface AppState {
   selectedClientId: string | null
   sidebarOpen: boolean
   sidebarCollapsed: boolean
+  lowStockFilterActive: boolean
   setCurrentPage: (page: AppPage) => void
   setSelectedClientId: (id: string | null) => void
   setSidebarOpen: (open: boolean) => void
   setSidebarCollapsed: (collapsed: boolean) => void
+  setLowStockFilterActive: (v: boolean) => void
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -65,8 +67,10 @@ export const useAppStore = create<AppState>((set) => ({
   selectedClientId: null,
   sidebarOpen: true,
   sidebarCollapsed: false,
+  lowStockFilterActive: false,
   setCurrentPage: (page) => set({ currentPage: page }),
   setSelectedClientId: (id) => set({ selectedClientId: id }),
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
   setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
+  setLowStockFilterActive: (v) => set({ lowStockFilterActive: v }),
 }))

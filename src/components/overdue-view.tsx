@@ -52,6 +52,7 @@ import {
   User,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { useAppStore } from '@/lib/store'
 // daysOverdue is calculated server-side
 
 interface OverdueInvoice {
@@ -132,6 +133,7 @@ function buildWhatsAppMessage(clientName: string, invoices: OverdueInvoice[], to
 
 export function OverdueView() {
   const queryClient = useQueryClient()
+  const { setSelectedClientId, setCurrentPage } = useAppStore()
   const [expandedClients, setExpandedClients] = useState<Set<string>>(new Set())
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false)
   const [paymentClientId, setPaymentClientId] = useState<string>('')
@@ -394,7 +396,18 @@ export function OverdueView() {
                                 )}
                               </button>
                               <div className="space-y-1">
-                                <h3 className="text-lg font-semibold">{clientGroup.client.name}</h3>
+                                <h3 className="text-lg font-semibold">
+                                  <button
+                                    className="hover:text-emerald-600 dark:hover:text-emerald-400 hover:underline transition-colors text-left"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setSelectedClientId(clientGroup.client.id)
+                                      setCurrentPage('accounts')
+                                    }}
+                                  >
+                                    {clientGroup.client.name}
+                                  </button>
+                                </h3>
                                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
                                   {clientGroup.client.phone && (
                                     <span className="flex items-center gap-1">

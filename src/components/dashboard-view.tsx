@@ -56,7 +56,7 @@ interface DashboardData {
     paymentMethod: string
     date: string
     user: { name: string }
-    client: { name: string } | null
+    client: { id: string; name: string } | null
   }[]
   topSellingProducts: {
     name: string
@@ -80,6 +80,7 @@ function StatCard({
   icon: Icon,
   iconBg,
   loading,
+  onClick,
 }: {
   title: string
   value: string
@@ -88,9 +89,13 @@ function StatCard({
   icon: React.ElementType
   iconBg: string
   loading?: boolean
+  onClick?: () => void
 }) {
   return (
-    <Card className="relative overflow-hidden">
+    <Card
+      className={`relative overflow-hidden ${onClick ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`}
+      onClick={onClick}
+    >
       <CardContent className="p-6">
         <div className="flex items-center justify-between">
           <div className="space-y-1">
@@ -159,7 +164,7 @@ function DashboardSkeleton() {
 }
 
 export function DashboardView() {
-  const setCurrentPage = useAppStore((s) => s.setCurrentPage)
+  const { setCurrentPage, setSelectedClientId, setLowStockFilterActive } = useAppStore()
 
   const { data, isLoading, error } = useQuery<DashboardData>({
     queryKey: ['dashboard'],
@@ -250,12 +255,14 @@ export function DashboardView() {
           subtitle={`${data.salesTodayCount} facturas`}
           icon={TrendingUp}
           iconBg="bg-emerald-500"
+          onClick={() => setCurrentPage('reports')}
         />
         <StatCard
           title="Clientes Totales"
           value={data.totalClients.toLocaleString()}
           icon={Users}
           iconBg="bg-teal-500"
+          onClick={() => setCurrentPage('clients')}
         />
         <StatCard
           title="Productos en Stock"
@@ -263,6 +270,7 @@ export function DashboardView() {
           subtitle={data.lowStockCount > 0 ? `${data.lowStockCount} con stock bajo` : undefined}
           icon={Package}
           iconBg="bg-cyan-500"
+          onClick={() => setCurrentPage('inventory')}
         />
         <StatCard
           title="Facturas Pendientes"
@@ -270,12 +278,16 @@ export function DashboardView() {
           subtitle={data.overdueInvoices > 0 ? `${data.overdueInvoices} vencidas` : undefined}
           icon={FileText}
           iconBg="bg-amber-500"
+          onClick={() => setCurrentPage('overdue')}
         />
       </div>
 
       {/* Sales Summary Cards */}
       <div className="grid gap-4 grid-cols-1 sm:grid-cols-3">
-        <Card>
+        <Card
+          className="cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => setCurrentPage('reports')}
+        >
           <CardContent className="p-4 flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100 dark:bg-emerald-900/30">
               <DollarSign className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
@@ -289,7 +301,10 @@ export function DashboardView() {
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card
+          className="cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => setCurrentPage('reports')}
+        >
           <CardContent className="p-4 flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-100 dark:bg-teal-900/30">
               <DollarSign className="h-5 w-5 text-teal-600 dark:text-teal-400" />
@@ -303,7 +318,13 @@ export function DashboardView() {
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card
+          className="cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => {
+            setLowStockFilterActive(true)
+            setCurrentPage('inventory')
+          }}
+        >
           <CardContent className="p-4 flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-100 dark:bg-amber-900/30">
               <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
@@ -442,7 +463,16 @@ export function DashboardView() {
                   </thead>
                   <tbody>
                     {data.recentTransactions.map((t) => (
-                      <tr key={t.id} className="border-b border-border/50 hover:bg-muted/50 transition-colors">
+                      <tr
+                        key={t.id}
+                        className="border-b border-border/50 hover:bg-muted/50 transition-colors cursor-pointer"
+                        onClick={() => {
+                          if (t.client) {
+                            setSelectedClientId(t.client.id)
+                            setCurrentPage('accounts')
+                          }
+                        }}
+                      >
                         <td className="py-2.5 text-xs">{formatDate(t.date)}</td>
                         <td className="py-2.5 text-xs font-medium">
                           {t.client?.name || 'Consumidor'}
@@ -567,6 +597,7 @@ function LowStockProducts() {
     queryKey: ['products', 'lowStock'],
     queryFn: () => api.get('/products?lowStock=true'),
   })
+  const { setCurrentPage, setLowStockFilterActive } = useAppStore()
 
   if (isLoading) {
     return (
@@ -585,7 +616,11 @@ function LowStockProducts() {
       {products.map((product: any) => (
         <div
           key={product.id}
-          className="flex items-center justify-between gap-2 py-2 px-3 rounded-lg bg-amber-50 dark:bg-amber-950/20"
+          className="flex items-center justify-between gap-2 py-2 px-3 rounded-lg bg-amber-50 dark:bg-amber-950/20 cursor-pointer hover:bg-amber-100 dark:hover:bg-amber-950/30 transition-colors"
+          onClick={() => {
+            setLowStockFilterActive(true)
+            setCurrentPage('inventory')
+          }}
         >
           <div className="min-w-0">
             <p className="text-sm font-medium truncate">{product.name}</p>

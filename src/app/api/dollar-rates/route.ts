@@ -88,3 +88,57 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Error al obtener tasas del dólar desde la API' }, { status: 500 })
   }
 }
+
+// PUT /api/dollar-rates - Manually enter a dollar rate
+export async function PUT(request: Request) {
+  try {
+    const user = getUserFromRequest(request)
+    if (!user) {
+      return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
+    }
+
+    if (user.role === 'EMPLEADO') {
+      return NextResponse.json({ error: 'No tiene permisos para ingresar tasas' }, { status: 403 })
+    }
+
+    const body = await request.json()
+    const { officialRate, parallelRate, date } = body
+
+    if (!officialRate || officialRate <= 0) {
+      return NextResponse.json({ error: 'La tasa oficial es requerida y debe ser mayor a 0' }, { status: 400 })
+    }
+
+    const targetDate = date ? new Date(date) : new Date()
+    targetDate.setHours(0, 0, 0, 0)
+
+    // Upsert: create or update the rate for this date
+    const rate = await db.dollarRate.upsert({
+      where: { date: targetDate },
+      update: {
+        officialRate,
+        parallelRate: parallelRate || officialRate,
+        source: 'Manual',
+      },
+      create: {
+        date: targetDate,
+        officialRate,
+        parallelRate: parallelRate || officialRate,
+        source: 'Manual',
+      },
+    })
+
+    await db.auditLog.create({
+      data: {
+        action: 'INGRESAR_TASA_MANUAL',
+        module: 'DOLAR',
+        details: `Tasa manual ingresada: Oficial=${officialRate}, Paralelo=${parallelRate || officialRate}, Fecha=${targetDate.toISOString()}`,
+        userId: user.userId,
+      },
+    })
+
+    return NextResponse.json(rate)
+  } catch (error) {
+    console.error('Error saving manual dollar rate:', error)
+    return NextResponse.json({ error: 'Error al guardar tasa manual' }, { status: 500 })
+  }
+}

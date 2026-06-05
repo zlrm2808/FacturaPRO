@@ -4,6 +4,7 @@ import { useState, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { formatCurrency, formatDate, getStatusColor } from '@/lib/format'
+import { useAppStore } from '@/lib/store'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -155,13 +156,20 @@ const ITEMS_PER_PAGE = 10
 
 export function InventoryView() {
   const queryClient = useQueryClient()
+  const { lowStockFilterActive, setLowStockFilterActive, setCurrentPage: navigateToPage } = useAppStore()
 
   // State
   const [searchTerm, setSearchTerm] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string>('')
-  const [lowStockFilter, setLowStockFilter] = useState(false)
+  const [lowStockFilter, setLowStockFilter] = useState(lowStockFilterActive)
   const [currentPage, setCurrentPage] = useState(1)
+
+  // Sync with store: if lowStockFilterActive changes to true, activate the local filter
+  if (lowStockFilterActive && !lowStockFilter) {
+    setLowStockFilter(true)
+    setLowStockFilterActive(false)
+  }
 
   // Dialog states
   const [productDialogOpen, setProductDialogOpen] = useState(false)
@@ -1014,10 +1022,25 @@ export function InventoryView() {
       <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Detalle del Producto</DialogTitle>
-            <DialogDescription>
-              Información completa y movimientos de stock
-            </DialogDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <DialogTitle>Detalle del Producto</DialogTitle>
+                <DialogDescription>
+                  Información completa y movimientos de stock
+                </DialogDescription>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-emerald-600 border-emerald-300 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-400 dark:hover:bg-emerald-900/20"
+                onClick={() => {
+                  setDetailDialogOpen(false)
+                  navigateToPage('reports')
+                }}
+              >
+                Ver en Reportes
+              </Button>
+            </div>
           </DialogHeader>
           {detailLoading ? (
             <div className="flex items-center justify-center py-12">

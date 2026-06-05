@@ -309,7 +309,14 @@ export function AccountsView() {
             <div className="space-y-3">
               <div className="flex items-center gap-2">
                 <User className="w-5 h-5 text-muted-foreground" />
-                <h2 className="text-xl font-semibold">{client?.name}</h2>
+                <h2 className="text-xl font-semibold">
+                  <button
+                    className="hover:text-emerald-600 dark:hover:text-emerald-400 hover:underline transition-colors"
+                    onClick={() => setCurrentPage('clients')}
+                  >
+                    {client?.name}
+                  </button>
+                </h2>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-sm">
                 {client?.phone && (

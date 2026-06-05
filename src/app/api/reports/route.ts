@@ -57,6 +57,8 @@ export async function GET(request: Request) {
         return await handleProductosVendidosReport(dateFilter)
       case 'ganancias':
         return await handleGananciasReport(dateFilter)
+      case 'lista-precios':
+        return await handleListaPreciosReport(searchParams)
       default:
         return NextResponse.json(
           { error: 'Tipo de reporte inválido' },
@@ -142,7 +144,7 @@ async function handleInventarioReport() {
     0
   )
   const totalCostValue = products.reduce(
-    (sum, p) => sum + p.purchasePrice * p.quantity,
+    (sum, p) => sum + (p.averageCost || p.purchasePrice) * p.quantity,
     0
   )
 
@@ -377,6 +379,90 @@ async function handleProductosVendidosReport(dateFilter: Record<string, unknown>
   })
 }
 
+async function handleListaPreciosReport(searchParams: URLSearchParams) {
+  const currency = searchParams.get('currency') || 'usd' // 'usd' or 'both'
+  const categoryId = searchParams.get('category') || ''
+
+  const where: Record<string, unknown> = {
+    status: 'ACTIVO',
+  }
+
+  if (categoryId) {
+    where.categoryId = categoryId
+  }
+
+  const products = await db.product.findMany({
+    where,
+    include: {
+      category: { select: { id: true, name: true } },
+    },
+    orderBy: [
+      { category: { name: 'asc' } },
+      { name: 'asc' },
+    ],
+  })
+
+  // Get current dollar rate
+  let dollarRate = 0
+  try {
+    const todayRate = await db.dollarRate.findFirst({
+      orderBy: { date: 'desc' },
+    })
+    if (todayRate) {
+      dollarRate = todayRate.officialRate
+    }
+  } catch {
+    // Rate not available
+  }
+
+  // Group by category
+  const byCategory = products.reduce(
+    (acc, p) => {
+      const catName = p.category?.name || 'Sin categoría'
+      if (!acc[catName]) {
+        acc[catName] = []
+      }
+      acc[catName].push({
+        id: p.id,
+        code: p.code,
+        name: p.name,
+        salePrice: p.salePrice,
+        salePriceBs: dollarRate > 0 ? p.salePrice * dollarRate : 0,
+        quantity: p.quantity,
+        category: catName,
+      })
+      return acc
+    },
+    {} as Record<string, Array<{
+      id: string
+      code: string
+      name: string
+      salePrice: number
+      salePriceBs: number
+      quantity: number
+      category: string
+    }>>
+  )
+
+  return NextResponse.json({
+    type: 'lista-precios',
+    currency,
+    dollarRate,
+    totalProducts: products.length,
+    categories: Object.keys(byCategory).length,
+    products: products.map((p) => ({
+      id: p.id,
+      code: p.code,
+      name: p.name,
+      salePrice: p.salePrice,
+      salePriceBs: dollarRate > 0 ? p.salePrice * dollarRate : 0,
+      quantity: p.quantity,
+      category: p.category?.name || 'Sin categoría',
+    })),
+    byCategory,
+  })
+}
+
 async function handleGananciasReport(dateFilter: Record<string, unknown>) {
   const invoiceDateFilter: Record<string, unknown> = {}
   if (dateFilter.date) {
@@ -391,7 +477,7 @@ async function handleGananciasReport(dateFilter: Record<string, unknown>) {
       },
     },
     include: {
-      product: { select: { id: true, name: true, purchasePrice: true } },
+      product: { select: { id: true, name: true, purchasePrice: true, averageCost: true } },
     },
   })
 
@@ -400,7 +486,9 @@ async function handleGananciasReport(dateFilter: Record<string, unknown>) {
 
   invoiceItems.forEach((item) => {
     totalRevenue += item.subtotal
-    totalCost += item.product.purchasePrice * item.quantity
+    // Use averageCost if available, otherwise fall back to purchasePrice
+    const costPerUnit = item.product.averageCost || item.product.purchasePrice
+    totalCost += costPerUnit * item.quantity
   })
 
   const profit = totalRevenue - totalCost
