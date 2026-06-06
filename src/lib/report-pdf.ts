@@ -289,6 +289,7 @@ export function generatePriceListPDF(
     totalProducts: number
     categories: number
     currency: string
+    clientName?: string
   },
   options: {
     watermark?: boolean
@@ -349,6 +350,16 @@ export function generatePriceListPDF(
   doc.setTextColor(30, 30, 30)
   doc.text('Lista De Precios', pageWidth / 2, yPos, { align: 'center' })
   yPos += 5
+
+  // === CLIENT NAME ===
+  if (data.clientName) {
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(180, 120, 0)
+    doc.text(`Cliente: ${data.clientName}`, pageWidth / 2, yPos, { align: 'center' })
+    doc.setTextColor(0)
+    yPos += 5
+  }
 
   // === DATE ===
   const today = new Date()

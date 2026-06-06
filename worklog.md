@@ -169,3 +169,36 @@ Stage Summary:
 - Product creation with unitOfMeasure works correctly (tested with UNIDAD, LITRO, CARTON)
 - Decimal quantities display correctly in inventory table (0.5 crt, 6 lt, 50 und)
 - All 5 features from previous session are working
+
+---
+Task ID: 6
+Agent: Main Agent
+Task: Add client-specific price list selection to price list report
+
+Work Log:
+- Updated backend API (`/api/reports?type=lista-precios`) to accept `clientId` parameter
+- When clientId is provided, the API fetches custom prices from ClientPrice table and returns:
+  - `salePrice` = custom price if exists, otherwise normal price
+  - `normalPrice` = standard product price
+  - `hasCustomPrice` = boolean flag
+  - `clientName` = name of the selected client
+  - `unit` = unit of measure from product
+- Updated reports-view.tsx frontend:
+  - Replaced static Select dropdown with Popover-based client search selector
+  - Added "Lista General" (normal prices) and searchable client list
+  - When a client is selected, the report shows their custom prices
+  - Added "Precio Normal" column (with strikethrough) when viewing client-specific prices
+  - Added "✕ Limpiar cliente" button to clear client selection
+  - Client name shown in the button when selected
+- Updated PDF generator (`generatePriceListPDF`) to show "Cliente: {name}" below the title
+- Updated Excel/CSV export to include PrecioNormalUSD and PrecioEspecial columns for client lists
+- Created test data: client "Carlos Mendoza" with custom prices (Huevos $4.00 vs $5.00, Pepsi 2L $3.50 vs $4.50)
+- Verified in browser: Lista General shows normal prices, selecting Carlos Mendoza shows custom prices with normal price column
+- Lint passes cleanly, no errors in dev log
+
+Stage Summary:
+- Price list report now supports choosing between general price list and client-specific price list
+- Client search popover with dynamic search results
+- Custom prices display with "Precio Normal" comparison column when client selected
+- PDF includes client name in header when applicable
+- Excel/CSV exports include both normal and custom prices for client lists

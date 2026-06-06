@@ -382,6 +382,7 @@ async function handleProductosVendidosReport(dateFilter: Record<string, unknown>
 async function handleListaPreciosReport(searchParams: URLSearchParams) {
   const currency = searchParams.get('currency') || 'usd' // 'usd' or 'both'
   const categoryId = searchParams.get('category') || ''
+  const clientId = searchParams.get('clientId') || ''
 
   const where: Record<string, unknown> = {
     status: 'ACTIVO',
@@ -415,33 +416,57 @@ async function handleListaPreciosReport(searchParams: URLSearchParams) {
     // Rate not available
   }
 
+  // Fetch client custom prices if clientId provided
+  let clientPrices: Record<string, number> = {}
+  let clientName: string | null = null
+  if (clientId) {
+    const client = await db.client.findUnique({
+      where: { id: clientId },
+      select: { id: true, name: true },
+    })
+    if (client) {
+      clientName = client.name
+      const prices = await db.clientPrice.findMany({
+        where: { clientId },
+        select: { productId: true, customPrice: true },
+      })
+      clientPrices = prices.reduce((acc, cp) => {
+        acc[cp.productId] = cp.customPrice
+        return acc
+      }, {} as Record<string, number>)
+    }
+  }
+
+  // Build product data with optional custom prices
+  const productData = products.map((p) => {
+    const customPrice = clientPrices[p.id]
+    const effectivePrice = customPrice !== undefined ? customPrice : p.salePrice
+    return {
+      id: p.id,
+      code: p.code,
+      name: p.name,
+      salePrice: effectivePrice,
+      salePriceBs: dollarRate > 0 ? effectivePrice * dollarRate : 0,
+      normalPrice: p.salePrice,
+      normalPriceBs: dollarRate > 0 ? p.salePrice * dollarRate : 0,
+      hasCustomPrice: customPrice !== undefined,
+      quantity: p.quantity,
+      category: p.category?.name || 'Sin categoría',
+      unit: p.unitOfMeasure || 'UNIDAD',
+    }
+  })
+
   // Group by category
-  const byCategory = products.reduce(
+  const byCategory = productData.reduce(
     (acc, p) => {
-      const catName = p.category?.name || 'Sin categoría'
+      const catName = p.category
       if (!acc[catName]) {
         acc[catName] = []
       }
-      acc[catName].push({
-        id: p.id,
-        code: p.code,
-        name: p.name,
-        salePrice: p.salePrice,
-        salePriceBs: dollarRate > 0 ? p.salePrice * dollarRate : 0,
-        quantity: p.quantity,
-        category: catName,
-      })
+      acc[catName].push(p)
       return acc
     },
-    {} as Record<string, Array<{
-      id: string
-      code: string
-      name: string
-      salePrice: number
-      salePriceBs: number
-      quantity: number
-      category: string
-    }>>
+    {} as Record<string, typeof productData>
   )
 
   return NextResponse.json({
@@ -450,15 +475,9 @@ async function handleListaPreciosReport(searchParams: URLSearchParams) {
     dollarRate,
     totalProducts: products.length,
     categories: Object.keys(byCategory).length,
-    products: products.map((p) => ({
-      id: p.id,
-      code: p.code,
-      name: p.name,
-      salePrice: p.salePrice,
-      salePriceBs: dollarRate > 0 ? p.salePrice * dollarRate : 0,
-      quantity: p.quantity,
-      category: p.category?.name || 'Sin categoría',
-    })),
+    clientName,
+    clientId: clientId || null,
+    products: productData,
     byCategory,
   })
 }

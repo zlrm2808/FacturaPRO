@@ -12,6 +12,11 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Table,
@@ -48,6 +53,9 @@ import {
   AlertTriangle,
   Tags,
   Droplets,
+  Search,
+  User,
+  ChevronDown,
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { toast } from 'sonner'
@@ -79,11 +87,23 @@ export function ReportsView() {
   const [priceCurrency, setPriceCurrency] = useState<'usd' | 'both'>('usd')
   const [showWatermark, setShowWatermark] = useState(false)
   const [priceCategory, setPriceCategory] = useState('')
+  const [priceClientId, setPriceClientId] = useState('')
+  const [clientSearch, setClientSearch] = useState('')
 
   // Fetch categories for filter
   const { data: categories } = useQuery({
     queryKey: ['categories-list'],
     queryFn: () => api.get('/categories'),
+  })
+
+  // Fetch clients for price list filter
+  const { data: clientsForPriceList = [] } = useQuery({
+    queryKey: ['clients-price-list', clientSearch],
+    queryFn: () => {
+      const params = clientSearch ? `?search=${encodeURIComponent(clientSearch)}` : ''
+      return api.get(`/clients${params}`)
+    },
+    enabled: reportType === 'lista-precios' && clientSearch.length > 0,
   })
 
   const buildReportUrl = () => {
@@ -93,12 +113,15 @@ export function ReportsView() {
       if (priceCategory) {
         url += `&category=${priceCategory}`
       }
+      if (priceClientId) {
+        url += `&clientId=${priceClientId}`
+      }
     }
     return url
   }
 
   const { data: report, isLoading } = useQuery({
-    queryKey: ['reports', reportType, fromDate, toDate, priceCurrency, priceCategory],
+    queryKey: ['reports', reportType, fromDate, toDate, priceCurrency, priceCategory, priceClientId],
     queryFn: () => api.get(buildReportUrl()),
     enabled: !!reportType,
   })
@@ -225,6 +248,8 @@ export function ReportsView() {
         ]
         break
       case 'lista-precios': {
+        // Get the selected client name
+        const clientName = priceClientId && report.clientName ? report.clientName as string : undefined
         // Use dedicated price list PDF generator
         const priceListDoc = generatePriceListPDF(company, {
           products: (report.products || []).map((p: Record<string, unknown>) => ({
@@ -241,10 +266,11 @@ export function ReportsView() {
           totalProducts: report.totalProducts as number || 0,
           categories: report.categories as number || 0,
           currency: priceCurrency,
+          clientName,
         }, {
           watermark: showWatermark,
         })
-        priceListDoc.save(`reporte-lista-precios.pdf`)
+        priceListDoc.save(`reporte-lista-precios${clientName ? '-' + clientName.replace(/\s+/g, '-') : ''}.pdf`)
         toast.success('PDF descargado correctamente')
         return
       }
@@ -363,15 +389,19 @@ export function ReportsView() {
             Codigo: p.code,
             Nombre: p.name,
             Categoria: p.category || '-',
+            ...(priceClientId && (p as any).hasCustomPrice ? { PrecioNormalUSD: (p as any).normalPrice } : {}),
             PrecioUSD: p.salePrice,
             PrecioBs: (p.salePriceBs as number) > 0 ? p.salePriceBs : '-',
+            ...(priceClientId && (p as any).hasCustomPrice ? { PrecioEspecial: p.salePrice } : {}),
           }))
         }
         return (report.products || []).map((p: Record<string, unknown>) => ({
           Codigo: p.code,
           Nombre: p.name,
           Categoria: p.category || '-',
+          ...(priceClientId && (p as any).hasCustomPrice ? { PrecioNormalUSD: (p as any).normalPrice } : {}),
           PrecioUSD: p.salePrice,
+          ...(priceClientId && (p as any).hasCustomPrice ? { PrecioEspecial: p.salePrice } : {}),
         }))
       default:
         return []
@@ -443,7 +473,10 @@ export function ReportsView() {
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             <SummaryCard title="Total Productos" value={report.totalProducts} icon={Package} />
             <SummaryCard title="Categorías" value={report.categories} icon={Tags} />
-            {(report.dollarRate as number) > 0 && (
+            {priceClientId && report.clientName && (
+              <SummaryCard title="Cliente" value={report.clientName as string} icon={User} />
+            )}
+            {!priceClientId && (report.dollarRate as number) > 0 && (
               <SummaryCard title="Tasa BCV" value={`Bs. ${(report.dollarRate as number).toFixed(2)}`} icon={DollarSign} />
             )}
           </div>
@@ -851,6 +884,17 @@ export function ReportsView() {
 
         return (
           <div className="space-y-4">
+            {priceClientId && report.clientName && (
+              <Card className="border-amber-500/50 bg-amber-50 dark:bg-amber-900/20">
+                <CardContent className="p-3">
+                  <div className="flex items-center gap-2">
+                    <User className="w-4 h-4 text-amber-600" />
+                    <span className="text-sm font-medium">Lista de precios para: </span>
+                    <span className="text-sm font-bold text-amber-700 dark:text-amber-400">{report.clientName as string}</span>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
             {categoryEntries.map(([catName, products]) => (
               <Card key={catName} className="overflow-hidden border-l-4 border-l-emerald-500">
                 <CardHeader className="pb-2 bg-emerald-50 dark:bg-emerald-900/20">
@@ -868,6 +912,9 @@ export function ReportsView() {
                           <TableHead className="text-white w-12">N°</TableHead>
                           <TableHead className="text-white">DESCRIPCION DE PRODUCTO</TableHead>
                           <TableHead className="text-white text-center w-20">UNIDAD</TableHead>
+                          {priceClientId && (
+                            <TableHead className="text-white text-right w-28">Precio Normal</TableHead>
+                          )}
                           <TableHead className="text-white text-right w-28">Precio USD</TableHead>
                           {isBoth && (
                             <TableHead className="text-white text-right w-32">Precio Bs</TableHead>
@@ -879,9 +926,22 @@ export function ReportsView() {
                           <TableRow key={p.id as string}>
                             <TableCell className="font-medium text-muted-foreground">{idx + 1}</TableCell>
                             <TableCell className="font-medium">{p.name as string}</TableCell>
-                            <TableCell className="text-center text-muted-foreground text-xs">Unidad</TableCell>
+                            <TableCell className="text-center text-muted-foreground text-xs">{(p as any).unit as string || 'Unidad'}</TableCell>
+                            {priceClientId && (
+                              <TableCell className="text-right text-muted-foreground">
+                                {(p as any).hasCustomPrice ? (
+                                  <span className="line-through">{formatCurrency((p as any).normalPrice as number)}</span>
+                                ) : (
+                                  '-'
+                                )}
+                              </TableCell>
+                            )}
                             <TableCell className="text-right font-semibold text-emerald-600 dark:text-emerald-400">
-                              {formatCurrency(p.salePrice as number)}
+                              {(p as any).hasCustomPrice && priceClientId ? (
+                                <span>{formatCurrency(p.salePrice as number)}</span>
+                              ) : (
+                                formatCurrency(p.salePrice as number)
+                              )}
                             </TableCell>
                             {isBoth && (
                               <TableCell className="text-right text-emerald-600 dark:text-emerald-400">
@@ -996,6 +1056,90 @@ export function ReportsView() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+                <div className="flex-1 space-y-1">
+                  <Label className="text-xs">Lista de Precios</Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className="w-full justify-between text-sm font-normal h-8">
+                        {priceClientId && report?.clientName ? (
+                          <span className="flex items-center gap-1.5 truncate">
+                            <User className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                            {report.clientName as string}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground flex items-center gap-1.5">
+                            <Tags className="w-3.5 h-3.5 shrink-0" />
+                            Lista General
+                          </span>
+                        )}
+                        <ChevronDown className="h-4 w-4 opacity-50 shrink-0" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="p-0 w-[var(--radix-popover-trigger-width)]" align="start">
+                      <div className="p-2">
+                        <div className="relative">
+                          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                          <Input
+                            placeholder="Buscar cliente por nombre..."
+                            value={clientSearch}
+                            onChange={(e) => setClientSearch(e.target.value)}
+                            className="pl-8 h-8 text-sm"
+                          />
+                        </div>
+                      </div>
+                      <ScrollArea className="max-h-52">
+                        <div className="p-1">
+                          <div
+                            onClick={() => {
+                              setPriceClientId('')
+                              setClientSearch('')
+                            }}
+                            className={`flex items-center px-2 py-1.5 text-sm rounded-sm cursor-pointer hover:bg-accent hover:text-accent-foreground ${!priceClientId ? 'bg-accent text-accent-foreground font-medium' : 'text-muted-foreground'}`}
+                          >
+                            <Tags className="h-3.5 w-3.5 mr-2 shrink-0" />
+                            Lista General (precios normales)
+                          </div>
+                          {clientSearch.length > 0 && clientsForPriceList.length === 0 && (
+                            <div className="px-2 py-4 text-center text-sm text-muted-foreground">
+                              Buscando...
+                            </div>
+                          )}
+                          {clientSearch.length > 0 && (clientsForPriceList as Record<string, unknown>[]).length > 0 && (clientsForPriceList as Record<string, unknown>[]).map((client: Record<string, unknown>) => (
+                            <div
+                              key={client.id as string}
+                              onClick={() => {
+                                setPriceClientId(client.id as string)
+                                setClientSearch('')
+                              }}
+                              className={`flex items-center px-2 py-1.5 text-sm rounded-sm cursor-pointer hover:bg-accent hover:text-accent-foreground ${priceClientId === client.id ? 'bg-accent text-accent-foreground font-medium' : ''}`}
+                            >
+                              <User className="h-3.5 w-3.5 mr-2 shrink-0" />
+                              <span className="truncate">{client.name as string}</span>
+                              {client.phone && (
+                                <span className="text-xs text-muted-foreground ml-2 shrink-0">{client.phone as string}</span>
+                              )}
+                            </div>
+                          ))}
+                          {clientSearch.length > 0 && (clientsForPriceList as Record<string, unknown>[]).length === 0 && (
+                            <div className="px-2 py-4 text-center text-sm text-muted-foreground">
+                              No se encontró cliente
+                            </div>
+                          )}
+                        </div>
+                      </ScrollArea>
+                    </PopoverContent>
+                  </Popover>
+                  {priceClientId && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 text-xs text-muted-foreground"
+                      onClick={() => { setPriceClientId(''); setClientSearch('') }}
+                    >
+                      ✕ Limpiar cliente
+                    </Button>
+                  )}
                 </div>
                 <div className="flex items-end gap-2 pb-1">
                   <div className="flex items-center space-x-2 bg-muted/50 px-3 py-2 rounded-lg border">
