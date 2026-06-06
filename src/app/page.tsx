@@ -15,6 +15,7 @@ import { useQuery } from '@tanstack/react-query'
 // Lazy load all views to reduce initial bundle size and memory usage
 const DashboardView = lazy(() => import('@/components/dashboard-view').then(m => ({ default: m.DashboardView })))
 const PosView = lazy(() => import('@/components/pos-view').then(m => ({ default: m.PosView })))
+const InvoicingView = lazy(() => import('@/components/invoicing-view').then(m => ({ default: m.InvoicingView })))
 const ClientsView = lazy(() => import('@/components/clients-view').then(m => ({ default: m.ClientsView })))
 const InventoryView = lazy(() => import('@/components/inventory-view').then(m => ({ default: m.InventoryView })))
 const AccountsView = lazy(() => import('@/components/accounts-view').then(m => ({ default: m.AccountsView })))
@@ -83,6 +84,7 @@ function Header() {
   const pageTitles: Record<string, string> = {
     dashboard: 'Dashboard',
     pos: 'Facturación (POS)',
+    invoicing: 'Facturación (Tradicional)',
     clients: 'Gestión de Clientes',
     inventory: 'Gestión de Inventario',
     accounts: 'Estados de Cuenta',
@@ -228,6 +230,8 @@ function AppContent() {
         return <DashboardView />
       case 'pos':
         return <PosView />
+      case 'invoicing':
+        return <InvoicingView />
       case 'clients':
         return <ClientsView />
       case 'inventory':

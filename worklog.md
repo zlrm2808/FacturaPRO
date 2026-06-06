@@ -202,3 +202,44 @@ Stage Summary:
 - Custom prices display with "Precio Normal" comparison column when client selected
 - PDF includes client name in header when applicable
 - Excel/CSV exports include both normal and custom prices for client lists
+
+---
+Task ID: 7
+Agent: Main Agent
+Task: Add traditional invoicing system alongside existing POS system
+
+Work Log:
+- Updated store.ts: Added 'invoicing' to AppPage type, added BillingMode type ('pos' | 'invoicing'), added billingMode and setBillingMode to AppState
+- Created /src/components/invoicing-view.tsx: Full traditional invoicing component with:
+  - Invoice list view with status filter (All, Pagadas, Pendientes, Vencidas, Anuladas) and pagination
+  - Invoice creation form with client selector, payment method, IVA toggle, discount, notes
+  - Product search popover with click-to-add to line items
+  - Editable line items table with quantity, unit price, discount per line
+  - Invoice summary card with subtotal, tax, discount, total (USD + Bs)
+  - Invoice detail dialog with full item breakdown and totals
+  - Status management (mark as paid, cancel) from detail dialog
+  - PDF generation for individual invoices
+  - Per-client custom prices support
+- Created /src/lib/invoice-pdf.ts: Professional invoice PDF generator with:
+  - Company header with logo/initial, name, RNC, address, phone
+  - Invoice number, date, status badge (color-coded)
+  - Client information box
+  - Products table with #, Product, Qty, Unit Price, Discount, Subtotal
+  - Totals section (subtotal, IVA, discount, total USD, total Bs, BCV rate)
+  - Payment method and cashier info
+  - Notes/observations section
+  - Footer with copyright and page numbers
+- Updated /src/components/app-sidebar.tsx: Added FileSpreadsheet icon import, added 'invoicing' page type, added "Facturación (Tradicional)" nav item with FileSpreadsheet icon
+- Updated /src/app/page.tsx: Added InvoicingView lazy import, added 'invoicing' page title, added case for 'invoicing' in renderPage()
+- Ran ESLint: passes cleanly
+- Verified with Agent Browser: both POS and Traditional invoicing views load correctly, sidebar shows both options, invoice list and creation form work
+
+Stage Summary:
+- Traditional invoicing system fully implemented alongside POS
+- Both accessible from sidebar: "Facturación (POS)" and "Facturación (Tradicional)"
+- Traditional invoicing has form-based workflow (header + line items table)
+- Invoice PDF generation with professional layout
+- Invoice list with filtering and pagination
+- Invoice detail with status management
+- Both systems share the same Invoice/InvoiceItem data model via existing API
+- No database schema changes needed (reuses existing Invoice model)

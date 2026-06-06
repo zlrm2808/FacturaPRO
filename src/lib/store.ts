@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 
-type AppPage = 'dashboard' | 'pos' | 'clients' | 'client-detail' | 'inventory' | 'accounts' | 'overdue' | 'suppliers' | 'reports' | 'audit' | 'notifications' | 'settings' | 'licenses' | 'users'
+type AppPage = 'dashboard' | 'pos' | 'invoicing' | 'clients' | 'client-detail' | 'inventory' | 'accounts' | 'overdue' | 'suppliers' | 'reports' | 'audit' | 'notifications' | 'settings' | 'licenses' | 'users'
+
+type BillingMode = 'pos' | 'invoicing'
 
 interface AuthState {
   token: string | null
@@ -21,12 +23,14 @@ interface AppState {
   sidebarCollapsed: boolean
   lowStockFilterActive: boolean
   posHistoryOpen: boolean
+  billingMode: BillingMode
   setCurrentPage: (page: AppPage) => void
   setSelectedClientId: (id: string | null) => void
   setSidebarOpen: (open: boolean) => void
   setSidebarCollapsed: (collapsed: boolean) => void
   setLowStockFilterActive: (v: boolean) => void
   setPosHistoryOpen: (v: boolean) => void
+  setBillingMode: (mode: BillingMode) => void
 }
 
 /**
@@ -110,10 +114,12 @@ export const useAppStore = create<AppState>((set) => ({
   sidebarCollapsed: false,
   lowStockFilterActive: false,
   posHistoryOpen: false,
+  billingMode: 'pos',
   setCurrentPage: (page) => set({ currentPage: page }),
   setSelectedClientId: (id) => set({ selectedClientId: id }),
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
   setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
   setLowStockFilterActive: (v) => set({ lowStockFilterActive: v }),
   setPosHistoryOpen: (v) => set({ posHistoryOpen: v }),
+  setBillingMode: (mode) => set({ billingMode: mode }),
 }))

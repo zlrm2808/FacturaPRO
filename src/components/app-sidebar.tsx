@@ -24,13 +24,15 @@ import {
   ChevronRight,
   AlertTriangle,
   Truck,
+  FileSpreadsheet,
 } from 'lucide-react'
 
-type Page = 'dashboard' | 'pos' | 'clients' | 'client-detail' | 'inventory' | 'accounts' | 'overdue' | 'suppliers' | 'reports' | 'audit' | 'notifications' | 'settings' | 'licenses' | 'users'
+type Page = 'dashboard' | 'pos' | 'invoicing' | 'clients' | 'client-detail' | 'inventory' | 'accounts' | 'overdue' | 'suppliers' | 'reports' | 'audit' | 'notifications' | 'settings' | 'licenses' | 'users'
 
 const mainNav: { id: Page; label: string; icon: React.ElementType; roles?: string[] }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'pos', label: 'Facturación (POS)', icon: ShoppingCart },
+  { id: 'invoicing', label: 'Facturación (Tradicional)', icon: FileSpreadsheet },
   { id: 'clients', label: 'Clientes', icon: Users },
   { id: 'inventory', label: 'Inventario', icon: Package },
   { id: 'accounts', label: 'Estados de Cuenta', icon: FileText },
