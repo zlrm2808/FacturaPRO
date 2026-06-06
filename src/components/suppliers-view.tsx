@@ -46,6 +46,15 @@ import {
 } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command'
 import {
   Truck,
   Search,
@@ -160,7 +169,7 @@ export function SuppliersView() {
   const [poItems, setPoItems] = useState<OrderItemInput[]>([])
   const [productSearch, setProductSearch] = useState('')
   const [showProductSearch, setShowProductSearch] = useState(false)
-  const [supplierSearchSelect, setSupplierSearchSelect] = useState('')
+  const [supplierPopoverOpen, setSupplierPopoverOpen] = useState(false)
 
   // ============ SUPPLIER QUERIES ============
   const { data: suppliers = [], isLoading: suppliersLoading } = useQuery<Supplier[]>({
@@ -351,6 +360,7 @@ export function SuppliersView() {
     setPoSupplierId('')
     setPoNotes('')
     setPoItems([])
+    setSupplierPopoverOpen(false)
     setPoDialogOpen(true)
   }
 
@@ -361,6 +371,7 @@ export function SuppliersView() {
     setPoItems([])
     setProductSearch('')
     setShowProductSearch(false)
+    setSupplierPopoverOpen(false)
   }
 
   const addProductToOrder = (product: { id: string; name: string; salePrice: number; purchasePrice: number }) => {
@@ -429,14 +440,8 @@ export function SuppliersView() {
 
   const isSupplierMutating = createSupplierMutation.isPending || updateSupplierMutation.isPending
 
-  // Filter suppliers for search select
-  const filteredAllSuppliers = supplierSearchSelect
-    ? allSuppliers.filter((s) =>
-        s.name.toLowerCase().includes(supplierSearchSelect.toLowerCase()) ||
-        (s.phone && s.phone.includes(supplierSearchSelect)) ||
-        (s.rncCedula && s.rncCedula.includes(supplierSearchSelect))
-      )
-    : allSuppliers
+  // Selected supplier name for display
+  const selectedSupplierName = allSuppliers.find((s) => s.id === poSupplierId)?.name || ''
 
   return (
     <div className="p-4 md:p-6 space-y-6">
@@ -905,38 +910,64 @@ export function SuppliersView() {
 
       {/* ==================== NEW PURCHASE ORDER DIALOG ==================== */}
       <Dialog open={poDialogOpen} onOpenChange={setPoDialogOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col">
-          <DialogHeader className="shrink-0">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col p-0 gap-0">
+          <DialogHeader className="shrink-0 px-6 pt-6 pb-2">
             <DialogTitle>Nueva Orden de Compra</DialogTitle>
             <DialogDescription>
               Seleccione un proveedor y agregue productos a la orden
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handlePOSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
-            <ScrollArea className="flex-1 min-h-0 pr-4">
-              <div className="grid gap-4 py-4">
-                {/* Supplier Selection */}
+            <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
+              <div className="grid gap-4">
+                {/* Supplier Selection - Combobox */}
                 <div className="grid gap-2">
                   <Label>Proveedor <span className="text-destructive">*</span></Label>
-                  <div className="space-y-2">
-                    <Input
-                      placeholder="Buscar proveedor..."
-                      value={supplierSearchSelect}
-                      onChange={(e) => setSupplierSearchSelect(e.target.value)}
-                    />
-                    <Select value={poSupplierId} onValueChange={setPoSupplierId}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Seleccionar proveedor..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {filteredAllSuppliers.map((s) => (
-                          <SelectItem key={s.id} value={s.id}>
-                            {s.name} {s.phone ? `- ${s.phone}` : ''} {s.rncCedula ? `- ${s.rncCedula}` : ''}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  <Popover open={supplierPopoverOpen} onOpenChange={setSupplierPopoverOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={supplierPopoverOpen}
+                        className="w-full justify-between font-normal"
+                      >
+                        {poSupplierId
+                          ? selectedSupplierName
+                          : 'Buscar proveedor...'}
+                        <Search className="size-4 ml-2 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Buscar por nombre, teléfono, RNC..." />
+                        <CommandList>
+                          <CommandEmpty>No se encontró proveedor</CommandEmpty>
+                          <CommandGroup>
+                            {allSuppliers.map((s) => (
+                              <CommandItem
+                                key={s.id}
+                                value={`${s.name} ${s.phone || ''} ${s.rncCedula || ''}`}
+                                onSelect={() => {
+                                  setPoSupplierId(s.id)
+                                  setSupplierPopoverOpen(false)
+                                }}
+                              >
+                                <div className="flex flex-col">
+                                  <span className="font-medium">{s.name}</span>
+                                  <span className="text-xs text-muted-foreground">
+                                    {[s.phone, s.rncCedula].filter(Boolean).join(' • ')}
+                                  </span>
+                                </div>
+                                {s.id === poSupplierId && (
+                                  <CheckCircle className="size-4 ml-auto text-emerald-600" />
+                                )}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 </div>
 
                 <Separator />
@@ -1091,8 +1122,8 @@ export function SuppliersView() {
                   />
                 </div>
               </div>
-            </ScrollArea>
-            <DialogFooter className="shrink-0 pt-2">
+            </div>
+            <DialogFooter className="shrink-0 px-6 py-4 border-t bg-background">
               <Button type="button" variant="outline" onClick={closePODialog}>
                 Cancelar
               </Button>
