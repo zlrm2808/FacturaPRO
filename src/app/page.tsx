@@ -7,7 +7,7 @@ import { LoginForm } from '@/components/login-form'
 import { AppSidebar } from '@/components/app-sidebar'
 import { Badge } from '@/components/ui/badge'
 import { api } from '@/lib/api'
-import { Bell, Moon, Sun, Menu, Loader2, DollarSign, RefreshCw } from 'lucide-react'
+import { Bell, Moon, Sun, Menu, Loader2, DollarSign, RefreshCw, History } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { Button } from '@/components/ui/button'
 import { useQuery } from '@tanstack/react-query'
@@ -77,6 +77,8 @@ function Header() {
   })
   const setCurrentPage = useAppStore((s) => s.setCurrentPage)
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen)
+  const posHistoryOpen = useAppStore((s) => s.posHistoryOpen)
+  const setPosHistoryOpen = useAppStore((s) => s.setPosHistoryOpen)
 
   const pageTitles: Record<string, string> = {
     dashboard: 'Dashboard',
@@ -121,6 +123,14 @@ function Header() {
             </button>
           </div>
         )}
+        <Button
+          variant={posHistoryOpen ? 'default' : 'ghost'}
+          size="icon"
+          onClick={() => setPosHistoryOpen(!posHistoryOpen)}
+          title="Historial de facturas"
+        >
+          <History className="w-4 h-4" />
+        </Button>
         <Button variant="ghost" size="icon" className="relative" onClick={() => setCurrentPage('notifications')}>
           <Bell className="w-4 h-4" />
           {unreadCount > 0 && (

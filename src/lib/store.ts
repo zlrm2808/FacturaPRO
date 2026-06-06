@@ -20,11 +20,13 @@ interface AppState {
   sidebarOpen: boolean
   sidebarCollapsed: boolean
   lowStockFilterActive: boolean
+  posHistoryOpen: boolean
   setCurrentPage: (page: AppPage) => void
   setSelectedClientId: (id: string | null) => void
   setSidebarOpen: (open: boolean) => void
   setSidebarCollapsed: (collapsed: boolean) => void
   setLowStockFilterActive: (v: boolean) => void
+  setPosHistoryOpen: (v: boolean) => void
 }
 
 /**
@@ -107,9 +109,11 @@ export const useAppStore = create<AppState>((set) => ({
   sidebarOpen: true,
   sidebarCollapsed: false,
   lowStockFilterActive: false,
+  posHistoryOpen: false,
   setCurrentPage: (page) => set({ currentPage: page }),
   setSelectedClientId: (id) => set({ selectedClientId: id }),
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
   setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
   setLowStockFilterActive: (v) => set({ lowStockFilterActive: v }),
+  setPosHistoryOpen: (v) => set({ posHistoryOpen: v }),
 }))

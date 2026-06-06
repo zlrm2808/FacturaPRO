@@ -905,15 +905,15 @@ export function SuppliersView() {
 
       {/* ==================== NEW PURCHASE ORDER DIALOG ==================== */}
       <Dialog open={poDialogOpen} onOpenChange={setPoDialogOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh]">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col">
+          <DialogHeader className="shrink-0">
             <DialogTitle>Nueva Orden de Compra</DialogTitle>
             <DialogDescription>
               Seleccione un proveedor y agregue productos a la orden
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handlePOSubmit}>
-            <ScrollArea className="max-h-[60vh] pr-4">
+          <form onSubmit={handlePOSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+            <ScrollArea className="flex-1 min-h-0 pr-4">
               <div className="grid gap-4 py-4">
                 {/* Supplier Selection */}
                 <div className="grid gap-2">
@@ -1092,7 +1092,7 @@ export function SuppliersView() {
                 </div>
               </div>
             </ScrollArea>
-            <DialogFooter>
+            <DialogFooter className="shrink-0 pt-2">
               <Button type="button" variant="outline" onClick={closePODialog}>
                 Cancelar
               </Button>

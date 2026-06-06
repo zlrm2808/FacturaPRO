@@ -49,7 +49,7 @@ export async function PUT(
 
     const { id } = await params
     const body = await request.json()
-    const { code, name, description, purchasePrice, salePrice, quantity, minStock, categoryId, status } = body
+    const { code, name, description, purchasePrice, salePrice, quantity, minStock, categoryId, status, unitOfMeasure } = body
 
     const existing = await db.product.findUnique({ where: { id } })
     if (!existing) {
@@ -86,8 +86,9 @@ export async function PUT(
         ...(description !== undefined && { description: description?.trim() || null }),
         ...(purchasePrice !== undefined && { purchasePrice }),
         ...(salePrice !== undefined && { salePrice }),
-        ...(quantity !== undefined && { quantity }),
-        ...(minStock !== undefined && { minStock }),
+        ...(quantity !== undefined && { quantity: parseFloat(String(quantity)) }),
+        ...(minStock !== undefined && { minStock: parseFloat(String(minStock)) }),
+        ...(unitOfMeasure !== undefined && { unitOfMeasure }),
         ...(categoryId !== undefined && { categoryId: categoryId || null }),
         ...(status !== undefined && { status }),
       },

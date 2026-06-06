@@ -68,6 +68,7 @@ model Client {
   invoices       Invoice[]
   accountEntries AccountEntry[]
   transactions   Transaction[]
+  clientPrices   ClientPrice[]
 }
 
 // ==================== CATEGORIES ====================
@@ -92,8 +93,9 @@ model Product {
   purchasePrice  Float    @default(0) // Last purchase price
   averageCost    Float    @default(0) // Weighted average cost (costo promedio ponderado)
   salePrice      Float    @default(0)
-  quantity       Int      @default(0)
-  minStock       Int      @default(5)
+  quantity       Float    @default(0) // Decimal support: 0.5 carton, 1.5 kg, etc.
+  minStock       Float    @default(5)
+  unitOfMeasure  String   @default("UNIDAD") // UNIDAD, KILO, LITRO, CARTON, BOLSA, CAJA, GALON, METRO, LIBRA
   status         String   @default("ACTIVO") // ACTIVO, INACTIVO
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -104,13 +106,14 @@ model Product {
   invoiceItems      InvoiceItem[]
   stockMovements    StockMovement[]
   purchaseOrderItems PurchaseOrderItem[]
+  clientPrices      ClientPrice[]
 }
 
 model StockMovement {
   id        String   @id @default(cuid())
   productId String
   type      String   // ENTRADA, SALIDA
-  quantity  Int
+  quantity  Float    // Decimal support
   unitCost  Float    @default(0) // Cost per unit at time of movement
   reason    String?
   reference String?
@@ -168,10 +171,10 @@ model PurchaseOrderItem {
   id          String  @id @default(cuid())
   productId   String
   product     Product @relation(fields: [productId], references: [id])
-  quantity    Int     @default(1)
+  quantity    Float   @default(1) // Decimal support
   unitPrice   Float
   subtotal    Float
-  received    Int     @default(0)
+  received    Float   @default(0) // Decimal support
 
   purchaseOrderId String
   purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
@@ -208,7 +211,7 @@ model Invoice {
 
 model InvoiceItem {
   id         String  @id @default(cuid())
-  quantity   Int     @default(1)
+  quantity   Float   @default(1) // Decimal support
   unitPrice  Float
   subtotal   Float
   discount   Float   @default(0)
@@ -306,4 +309,20 @@ model CompanyConfig {
   taxRate     Float   @default(16)
   copyright   String  @default("Zeus Rodriguez")
   updatedAt   DateTime @updatedAt
+}
+
+// ==================== CLIENT PRICE LISTS ====================
+
+model ClientPrice {
+  id          String   @id @default(cuid())
+  clientId    String
+  productId   String
+  customPrice Float    // Custom price for this client-product combination
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  client  Client  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, productId]) // One custom price per client per product
 }

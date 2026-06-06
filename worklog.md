@@ -125,3 +125,25 @@ Stage Summary:
 - UTC dates prevent timezone mismatch between server and client
 - Less aggressive auto-logout: only on auth endpoint 401s, not all API 401s
 - 100% validation complete: all pages load, all APIs return 200, session persists across reloads
+---
+Task ID: 4
+Agent: Main Agent
+Task: Implement 5 new features: UoM/decimal quantities, POS cart visibility, PO responsive fix, per-client price lists, account statement improvements
+
+Work Log:
+- Updated Prisma schema: changed quantity/minStock from Int to Float in Product, StockMovement, PurchaseOrderItem, InvoiceItem; added unitOfMeasure to Product; added ClientPrice model with unique constraint on clientId+productId
+- Ran db:push to apply schema changes
+- Task 1 (Inventory UoM): Updated inventory-view with UoM dropdown (9 options: UNIDAD, KILO, LITRO, CARTON, etc.), decimal inputs, product API routes updated to use parseFloat, stock display shows unit abbreviation
+- Task 2 (POS Cart): Removed duplicate dollar rate and history button from POS header, added history button to top bar next to notifications, made cart more compact with max-h-[30vh] scroll area and shrink-0 on summary/buttons
+- Task 3 (PO Responsive): Changed PO dialog to flex-col layout with ScrollArea using flex-1 min-h-0 instead of fixed max-h-[60vh], DialogFooter uses shrink-0 to always be visible
+- Task 4 (Client Price Lists): Created /api/client-prices routes (GET, POST with upsert, DELETE), added price list dialog in clients-view with product search and custom price management, updated POS to use custom prices when client is selected
+- Task 5 (Account Statement): Added WhatsApp button with pre-filled message, added "Registrar Cobro" (DEBITO) dialog, added running balance column, removed restrictive max-h-96, improved client info card layout
+
+Stage Summary:
+- All 5 features implemented and verified via agent browser
+- Lint passes cleanly, dev server running without errors
+- Units of measure with 9 options and decimal quantities working
+- POS cart always visible on small screens
+- PO dialog footer buttons always accessible
+- Per-client custom prices with upsert support
+- Account statement with WhatsApp, cobro, running balance

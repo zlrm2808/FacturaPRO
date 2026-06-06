@@ -53,6 +53,7 @@ import {
   Trash2,
   Users,
   Loader2,
+  Tags,
 } from 'lucide-react'
 
 // Types
@@ -100,6 +101,14 @@ export function ClientsView() {
   const [editingClient, setEditingClient] = useState<Client | null>(null)
   const [deleteClient, setDeleteClient] = useState<Client | null>(null)
   const [formData, setFormData] = useState<ClientFormData>(emptyForm)
+
+  // Price list dialog state
+  const [priceListDialogOpen, setPriceListDialogOpen] = useState(false)
+  const [priceListClientId, setPriceListClientId] = useState<string | null>(null)
+  const [priceListClientName, setPriceListClientName] = useState('')
+  const [productSearchForPrice, setProductSearchForPrice] = useState('')
+  const [newCustomPrice, setNewCustomPrice] = useState('')
+  const [newCustomProductId, setNewCustomProductId] = useState<string | null>(null)
 
   // Debounce search
   const debounceTimer = useState<ReturnType<typeof setTimeout> | null>(null)
@@ -236,6 +245,86 @@ export function ClientsView() {
     return items
   }
 
+  // Fetch client prices when dialog opens
+  const { data: clientPrices = [], isLoading: clientPricesLoading } = useQuery({
+    queryKey: ['client-prices', priceListClientId],
+    queryFn: () => api.get(`/client-prices?clientId=${priceListClientId}`),
+    enabled: !!priceListClientId && priceListDialogOpen,
+  })
+
+  // Fetch products for adding to price list
+  const { data: priceListProducts = [] } = useQuery({
+    queryKey: ['products', productSearchForPrice],
+    queryFn: () => {
+      const params = productSearchForPrice ? `?search=${encodeURIComponent(productSearchForPrice)}` : ''
+      return api.get(`/products${params}`)
+    },
+    enabled: priceListDialogOpen && productSearchForPrice.length > 0,
+  })
+
+  // Add custom price mutation
+  const addPriceMutation = useMutation({
+    mutationFn: (data: { clientId: string; productId: string; customPrice: number }) =>
+      api.post('/client-prices', data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['client-prices', priceListClientId] })
+      toast.success('Precio personalizado guardado')
+      setNewCustomPrice('')
+      setNewCustomProductId(null)
+      setProductSearchForPrice('')
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Error al guardar precio')
+    },
+  })
+
+  // Delete custom price mutation
+  const deletePriceMutation = useMutation({
+    mutationFn: (id: string) => api.del(`/client-prices/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['client-prices', priceListClientId] })
+      toast.success('Precio personalizado eliminado')
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Error al eliminar precio')
+    },
+  })
+
+  const openPriceListDialog = (client: Client) => {
+    setPriceListClientId(client.id)
+    setPriceListClientName(client.name)
+    setPriceListDialogOpen(true)
+    setProductSearchForPrice('')
+    setNewCustomPrice('')
+    setNewCustomProductId(null)
+  }
+
+  const closePriceListDialog = () => {
+    setPriceListDialogOpen(false)
+    setPriceListClientId(null)
+    setPriceListClientName('')
+    setProductSearchForPrice('')
+    setNewCustomPrice('')
+    setNewCustomProductId(null)
+  }
+
+  const handleAddPrice = () => {
+    if (!priceListClientId || !newCustomProductId || !newCustomPrice) {
+      toast.error('Seleccione un producto e ingrese el precio')
+      return
+    }
+    const price = parseFloat(newCustomPrice)
+    if (isNaN(price) || price < 0) {
+      toast.error('Ingrese un precio válido')
+      return
+    }
+    addPriceMutation.mutate({
+      clientId: priceListClientId,
+      productId: newCustomProductId,
+      customPrice: price,
+    })
+  }
+
   const isMutating = createMutation.isPending || updateMutation.isPending
 
   return (
@@ -356,6 +445,15 @@ export function ClientsView() {
                           title="Ver detalles"
                         >
                           <Eye className="size-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => openPriceListDialog(client)}
+                          title="Lista de Precios"
+                          className="text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300"
+                        >
+                          <Tags className="size-4" />
                         </Button>
                         <Button
                           variant="ghost"
@@ -486,6 +584,172 @@ export function ClientsView() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Price List Dialog */}
+      <Dialog open={priceListDialogOpen} onOpenChange={(open) => !open && closePriceListDialog()}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Tags className="size-5 text-amber-600" />
+              Lista de Precios - {priceListClientName}
+            </DialogTitle>
+            <DialogDescription>
+              Gestiona los precios personalizados para este cliente
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {/* Existing custom prices */}
+            <div>
+              <Label className="text-sm font-medium mb-2 block">Precios Personalizados</Label>
+              {clientPricesLoading ? (
+                <div className="flex items-center justify-center py-6">
+                  <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : clientPrices.length === 0 ? (
+                <div className="text-center py-6 text-muted-foreground text-sm">
+                  No hay precios personalizados para este cliente
+                </div>
+              ) : (
+                <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+                  {clientPrices.map((cp: any) => (
+                    <div
+                      key={cp.id}
+                      className="flex items-center justify-between gap-2 p-2.5 rounded-lg border bg-card"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{cp.product.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {cp.product.code} &middot; Precio normal: {formatCurrency(cp.product.salePrice)}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="text-right">
+                          <p className="text-sm font-bold text-amber-600 dark:text-amber-400">
+                            {formatCurrency(cp.customPrice)}
+                          </p>
+                          {cp.customPrice !== cp.product.salePrice && (
+                            <p className="text-[10px] text-muted-foreground">
+                              {cp.customPrice < cp.product.salePrice ? '↓' : '↑'} vs normal
+                            </p>
+                          )}
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-7 text-destructive hover:text-destructive shrink-0"
+                          onClick={() => deletePriceMutation.mutate(cp.id)}
+                          disabled={deletePriceMutation.isPending}
+                        >
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Add product section */}
+            <div className="border-t pt-4">
+              <Label className="text-sm font-medium mb-2 block">Agregar Producto</Label>
+              <div className="space-y-2">
+                {/* Product search */}
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar producto por nombre o código..."
+                    value={productSearchForPrice}
+                    onChange={(e) => {
+                      setProductSearchForPrice(e.target.value)
+                      setNewCustomProductId(null)
+                    }}
+                    className="pl-8 h-9 text-sm"
+                  />
+                </div>
+
+                {/* Product search results */}
+                {productSearchForPrice.length > 0 && !newCustomProductId && (
+                  <div className="max-h-36 overflow-y-auto border rounded-md">
+                    {priceListProducts
+                      .filter((p: any) => p.status === 'ACTIVO')
+                      .slice(0, 10)
+                      .map((p: any) => {
+                        const alreadyAdded = clientPrices.some((cp: any) => cp.productId === p.id)
+                        return (
+                          <div
+                            key={p.id}
+                            onClick={() => {
+                              if (!alreadyAdded) {
+                                setNewCustomProductId(p.id)
+                                setProductSearchForPrice(p.name)
+                              }
+                            }}
+                            className={`flex items-center justify-between px-3 py-2 text-sm cursor-pointer hover:bg-accent transition-colors ${
+                              alreadyAdded ? 'opacity-50 pointer-events-none' : ''
+                            }`}
+                          >
+                            <div className="min-w-0">
+                              <span className="truncate">{p.name}</span>
+                              <span className="text-xs text-muted-foreground ml-2">{p.code}</span>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="text-xs text-muted-foreground">
+                                {formatCurrency(p.salePrice)}
+                              </span>
+                              {alreadyAdded && (
+                                <Badge variant="outline" className="text-[10px] px-1 py-0 border-amber-300 text-amber-700">
+                                  ★
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                  </div>
+                )}
+
+                {/* Custom price input + add button */}
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    placeholder="Precio personalizado"
+                    value={newCustomPrice}
+                    onChange={(e) => setNewCustomPrice(e.target.value)}
+                    className="h-9 text-sm"
+                    min={0}
+                    step={0.01}
+                  />
+                  <Button
+                    onClick={handleAddPrice}
+                    disabled={!newCustomProductId || !newCustomPrice || addPriceMutation.isPending}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white h-9"
+                  >
+                    {addPriceMutation.isPending ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <Plus className="size-4" />
+                    )}
+                    Agregar
+                  </Button>
+                </div>
+
+                {newCustomProductId && (
+                  <p className="text-xs text-muted-foreground">
+                    Producto seleccionado. Ingrese el precio personalizado y haga clic en Agregar.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={closePriceListDialog}>
+              Cerrar
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

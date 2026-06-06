@@ -85,6 +85,7 @@ interface Product {
   salePrice: number
   quantity: number
   minStock: number
+  unitOfMeasure: string
   status: string
   categoryId: string | null
   createdAt: string
@@ -114,6 +115,7 @@ interface ProductFormData {
   salePrice: string
   quantity: string
   minStock: string
+  unitOfMeasure: string
   categoryId: string
   status: string
 }
@@ -137,6 +139,7 @@ const emptyProductForm: ProductFormData = {
   salePrice: '',
   quantity: '0',
   minStock: '5',
+  unitOfMeasure: 'UNIDAD',
   categoryId: '',
   status: 'ACTIVO',
 }
@@ -151,6 +154,18 @@ const emptyMovementForm: StockMovementFormData = {
   quantity: '',
   reason: '',
 }
+
+const UOM_OPTIONS = [
+  { value: 'UNIDAD', label: 'Unidad' },
+  { value: 'KILO', label: 'Kilo' },
+  { value: 'LITRO', label: 'Litro' },
+  { value: 'CARTON', label: 'Cartón' },
+  { value: 'BOLSA', label: 'Bolsa' },
+  { value: 'CAJA', label: 'Caja' },
+  { value: 'GALON', label: 'Galón' },
+  { value: 'METRO', label: 'Metro' },
+  { value: 'LIBRA', label: 'Libra' },
+]
 
 const ITEMS_PER_PAGE = 10
 
@@ -230,8 +245,9 @@ export function InventoryView() {
         ...data,
         purchasePrice: parseFloat(data.purchasePrice) || 0,
         salePrice: parseFloat(data.salePrice) || 0,
-        quantity: parseInt(data.quantity) || 0,
-        minStock: parseInt(data.minStock) || 5,
+        quantity: parseFloat(data.quantity) || 0,
+        minStock: parseFloat(data.minStock) || 5,
+        unitOfMeasure: data.unitOfMeasure || 'UNIDAD',
         categoryId: data.categoryId || null,
       }),
     onSuccess: () => {
@@ -250,8 +266,9 @@ export function InventoryView() {
         ...data,
         purchasePrice: parseFloat(data.purchasePrice) || 0,
         salePrice: parseFloat(data.salePrice) || 0,
-        quantity: parseInt(data.quantity) || 0,
-        minStock: parseInt(data.minStock) || 5,
+        quantity: parseFloat(data.quantity) || 0,
+        minStock: parseFloat(data.minStock) || 5,
+        unitOfMeasure: data.unitOfMeasure || 'UNIDAD',
         categoryId: data.categoryId || null,
       }),
     onSuccess: () => {
@@ -291,7 +308,7 @@ export function InventoryView() {
 
   const stockMovementMutation = useMutation({
     mutationFn: ({ productId, data }: { productId: string; data: StockMovementFormData }) => {
-      const qty = parseInt(data.quantity) || 0
+      const qty = parseFloat(data.quantity) || 0
       const currentProduct = products.find((p) => p.id === productId)
       const currentQty = currentProduct?.quantity || 0
       const newQty = data.type === 'ENTRADA' ? currentQty + qty : currentQty - qty
@@ -328,6 +345,7 @@ export function InventoryView() {
       salePrice: String(product.salePrice),
       quantity: String(product.quantity),
       minStock: String(product.minStock),
+      unitOfMeasure: product.unitOfMeasure || 'UNIDAD',
       categoryId: product.categoryId || '',
       status: product.status,
     })
@@ -369,7 +387,7 @@ export function InventoryView() {
 
   const handleMovementSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!movementForm.quantity || parseInt(movementForm.quantity) <= 0) {
+    if (!movementForm.quantity || parseFloat(movementForm.quantity) <= 0) {
       toast.error('La cantidad debe ser mayor a 0')
       return
     }
@@ -393,6 +411,21 @@ export function InventoryView() {
   }
 
   // Stock status helper
+  const getUnitAbbr = (unitOfMeasure?: string) => {
+    const map: Record<string, string> = {
+      UNIDAD: 'und',
+      KILO: 'kg',
+      LITRO: 'lt',
+      CARTON: 'crt',
+      BOLSA: 'bls',
+      CAJA: 'cja',
+      GALON: 'gal',
+      METRO: 'm',
+      LIBRA: 'lb',
+    }
+    return map[unitOfMeasure || 'UNIDAD'] || 'und'
+  }
+
   const getStockStyle = (quantity: number, minStock: number) => {
     if (quantity <= minStock) {
       return 'font-semibold text-red-600 dark:text-red-400'
@@ -594,13 +627,13 @@ export function InventoryView() {
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <span className={getStockStyle(product.quantity, product.minStock)}>
-                            {product.quantity}
+                            {product.quantity} {getUnitAbbr(product.unitOfMeasure)}
                           </span>
                           {getStockBadge(product.quantity, product.minStock)}
                         </div>
                       </TableCell>
                       <TableCell className="hidden xl:table-cell text-muted-foreground">
-                        {product.minStock}
+                        {product.minStock} {getUnitAbbr(product.unitOfMeasure)}
                       </TableCell>
                       <TableCell className="hidden sm:table-cell">
                         <Badge className={getStatusColor(product.status)}>
@@ -779,6 +812,7 @@ export function InventoryView() {
                   <Input
                     id="quantity"
                     type="number"
+                    step="0.01"
                     min="0"
                     value={productForm.quantity}
                     onChange={(e) =>
@@ -792,6 +826,7 @@ export function InventoryView() {
                   <Input
                     id="minStock"
                     type="number"
+                    step="0.01"
                     min="0"
                     value={productForm.minStock}
                     onChange={(e) =>
@@ -803,6 +838,26 @@ export function InventoryView() {
               </div>
 
               <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="unitOfMeasure">Unidad de Medida</Label>
+                  <Select
+                    value={productForm.unitOfMeasure}
+                    onValueChange={(val) =>
+                      setProductForm({ ...productForm, unitOfMeasure: val })
+                    }
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {UOM_OPTIONS.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
                 <div className="grid gap-2">
                   <Label htmlFor="categoryId">Categoría</Label>
                   <Select
@@ -941,7 +996,7 @@ export function InventoryView() {
               <DialogTitle>Movimiento de Stock</DialogTitle>
               <DialogDescription>
                 {movementProduct
-                  ? `Producto: ${movementProduct.name} (${movementProduct.code}) — Stock actual: ${movementProduct.quantity}`
+                  ? `Producto: ${movementProduct.name} (${movementProduct.code}) — Stock actual: ${movementProduct.quantity} ${getUnitAbbr(movementProduct.unitOfMeasure)}`
                   : 'Registrar movimiento de inventario'}
               </DialogDescription>
             </DialogHeader>
@@ -970,7 +1025,8 @@ export function InventoryView() {
                 <Input
                   id="movementQty"
                   type="number"
-                  min="1"
+                  step="0.01"
+                  min="0.01"
                   value={movementForm.quantity}
                   onChange={(e) =>
                     setMovementForm({ ...movementForm, quantity: e.target.value })
@@ -1079,12 +1135,12 @@ export function InventoryView() {
                 <div>
                   <p className="text-sm text-muted-foreground">Stock Actual</p>
                   <p className={getStockStyle(detailProduct.quantity, detailProduct.minStock)}>
-                    {detailProduct.quantity} unidades
+                    {detailProduct.quantity} {detailProduct.unitOfMeasure || 'unidades'}
                   </p>
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Stock Mínimo</p>
-                  <p className="font-medium">{detailProduct.minStock} unidades</p>
+                  <p className="font-medium">{detailProduct.minStock} {detailProduct.unitOfMeasure || 'unidades'}</p>
                 </div>
                 {detailProduct.description && (
                   <div className="col-span-2">

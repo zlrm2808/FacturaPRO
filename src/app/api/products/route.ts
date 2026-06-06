@@ -84,7 +84,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const { code, name, description, purchasePrice, salePrice, quantity, minStock, categoryId, status } = body
+    const { code, name, description, purchasePrice, salePrice, quantity, minStock, categoryId, status, unitOfMeasure } = body
 
     if (!code || code.trim() === '') {
       return NextResponse.json({ error: 'El código es requerido' }, { status: 400 })
@@ -102,9 +102,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Ya existe un producto con ese código' }, { status: 409 })
     }
 
-    const productQuantity = quantity ?? 0
-    const productMinStock = minStock ?? 5
+    const productQuantity = quantity != null ? parseFloat(String(quantity)) : 0
+    const productMinStock = minStock != null ? parseFloat(String(minStock)) : 5
     const productPurchasePrice = purchasePrice ?? 0
+    const productUnitOfMeasure = unitOfMeasure || 'UNIDAD'
 
     const product = await db.product.create({
       data: {
@@ -116,6 +117,7 @@ export async function POST(request: Request) {
         salePrice: salePrice,
         quantity: productQuantity,
         minStock: productMinStock,
+        unitOfMeasure: productUnitOfMeasure,
         categoryId: categoryId || null,
         status: status || 'ACTIVO',
       },

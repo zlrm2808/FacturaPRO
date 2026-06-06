@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo, useCallback } from 'react'
+import { useAppStore } from '@/lib/store'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { formatCurrency, formatBs, formatDateTime, getStatusColor, getPaymentMethodLabel } from '@/lib/format'
@@ -44,7 +45,6 @@ import {
   Loader2,
   Receipt,
   ChevronDown,
-  DollarSign,
 } from 'lucide-react'
 
 interface CartItem {
@@ -65,6 +65,7 @@ interface Product {
   salePrice: number
   quantity: number
   minStock: number
+  unitOfMeasure: string
   status: string
   categoryId: string | null
   category: { id: string; name: string } | null
@@ -131,7 +132,7 @@ export function PosView() {
   const [selectedCategory, setSelectedCategory] = useState('all')
   const [clientSearch, setClientSearch] = useState('')
   const [clientPopoverOpen, setClientPopoverOpen] = useState(false)
-  const [showHistory, setShowHistory] = useState(false)
+  const { posHistoryOpen, setPosHistoryOpen } = useAppStore()
   const [selectedInvoice, setSelectedInvoice] = useState<InvoiceDetail | null>(null)
   const [invoiceDialogOpen, setInvoiceDialogOpen] = useState(false)
 
@@ -170,11 +171,18 @@ export function PosView() {
     },
   })
 
+  // Fetch client prices when a client is selected
+  const { data: clientPrices = [] } = useQuery({
+    queryKey: ['client-prices', selectedClientId],
+    queryFn: () => api.get(`/client-prices?clientId=${selectedClientId}`),
+    enabled: !!selectedClientId,
+  })
+
   // Fetch invoices for history
   const { data: invoicesData, isLoading: invoicesLoading } = useQuery({
     queryKey: ['invoices'],
     queryFn: () => api.get('/invoices?limit=20'),
-    enabled: showHistory,
+    enabled: posHistoryOpen,
   })
 
   // Create invoice mutation
@@ -218,6 +226,10 @@ export function PosView() {
       return
     }
 
+    // Check if there's a custom price for this client
+    const clientPrice = clientPrices.find((cp: any) => cp.productId === product.id)
+    const effectivePrice = clientPrice ? clientPrice.customPrice : product.salePrice
+
     setCart((prev) => {
       const existing = prev.find((item) => item.productId === product.id)
       if (existing) {
@@ -239,13 +251,13 @@ export function PosView() {
           name: product.name,
           code: product.code,
           quantity: 1,
-          unitPrice: product.salePrice,
+          unitPrice: effectivePrice,
           discount: 0,
-          subtotal: product.salePrice,
+          subtotal: effectivePrice,
         },
       ]
     })
-  }, [cart])
+  }, [cart, clientPrices])
 
   // Update cart item quantity
   const updateQuantity = useCallback((productId: string, delta: number) => {
@@ -330,39 +342,17 @@ export function PosView() {
   return (
     <div className="h-[calc(100vh-2rem)] flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between gap-2 mb-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Facturación (POS)</h1>
-          <p className="text-muted-foreground text-sm">Punto de venta</p>
-        </div>
-        <div className="flex items-center gap-2">
-          {/* Dollar Rate Indicator */}
-          {dollarRate > 0 && (
-            <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
-              <DollarSign className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-              <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">
-                1 USD = Bs. {dollarRate.toFixed(2)}
-              </span>
-            </div>
-          )}
-          <Button
-            variant={showHistory ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setShowHistory(!showHistory)}
-            className="gap-1.5"
-          >
-            <History className="h-4 w-4" />
-            <span className="hidden sm:inline">Historial</span>
-          </Button>
-        </div>
+      <div className="mb-3">
+        <h1 className="text-xl font-bold tracking-tight">Facturación (POS)</h1>
+        <p className="text-muted-foreground text-sm">Punto de venta</p>
       </div>
 
-      {showHistory ? (
+      {posHistoryOpen ? (
         <InvoiceHistory
           invoicesData={invoicesData}
           isLoading={invoicesLoading}
           onViewInvoice={viewInvoice}
-          onClose={() => setShowHistory(false)}
+          onClose={() => setPosHistoryOpen(false)}
           dollarRate={dollarRate}
         />
       ) : (
@@ -429,32 +419,48 @@ export function PosView() {
                   {activeProducts.map((product) => {
                     const inCart = cart.find((c) => c.productId === product.id)
                     const isLowStock = product.quantity <= product.minStock
+                    const clientPrice = selectedClientId ? clientPrices.find((cp: any) => cp.productId === product.id) : null
+                    const effectivePrice = clientPrice ? clientPrice.customPrice : product.salePrice
                     return (
                       <Card
                         key={product.id}
                         className={`cursor-pointer hover:border-emerald-300 dark:hover:border-emerald-700 transition-colors ${
                           inCart ? 'border-emerald-400 dark:border-emerald-600 ring-1 ring-emerald-200 dark:ring-emerald-800' : ''
+                        } ${
+                          clientPrice ? 'border-amber-300 dark:border-amber-700' : ''
                         }`}
                         onClick={() => addToCart(product)}
                       >
                         <CardContent className="p-3 space-y-1.5">
                           <div className="flex items-start justify-between gap-1">
                             <p className="text-sm font-medium leading-tight line-clamp-2">{product.name}</p>
-                            {inCart && (
-                              <Badge className="bg-emerald-600 text-white text-[10px] px-1.5 py-0 shrink-0">
-                                {inCart.quantity}
-                              </Badge>
-                            )}
+                            <div className="flex items-center gap-1 shrink-0">
+                              {clientPrice && (
+                                <Badge className="bg-amber-100 text-amber-800 text-[10px] px-1.5 py-0 border border-amber-300 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-700" title="Precio personalizado">
+                                  ★
+                                </Badge>
+                              )}
+                              {inCart && (
+                                <Badge className="bg-emerald-600 text-white text-[10px] px-1.5 py-0">
+                                  {inCart.quantity}
+                                </Badge>
+                              )}
+                            </div>
                           </div>
                           <p className="text-xs text-muted-foreground">{product.code}</p>
                           <div className="flex items-center justify-between">
                             <div>
                               <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
-                                {formatCurrency(product.salePrice)}
+                                {formatCurrency(effectivePrice)}
                               </p>
+                              {clientPrice && (
+                                <p className="text-[10px] text-muted-foreground line-through">
+                                  {formatCurrency(product.salePrice)}
+                                </p>
+                              )}
                               {dollarRate > 0 && (
                                 <p className="text-[10px] text-muted-foreground">
-                                  {formatBs(product.salePrice * dollarRate)}
+                                  {formatBs(effectivePrice * dollarRate)}
                                 </p>
                               )}
                             </div>
@@ -468,7 +474,7 @@ export function PosView() {
                                   : 'border-muted-foreground/30 text-muted-foreground'
                               }`}
                             >
-                              {product.quantity === 0 ? 'Agotado' : `${product.quantity} uds`}
+                              {product.quantity === 0 ? 'Agotado' : `${product.quantity} ${product.unitOfMeasure ? product.unitOfMeasure.substring(0, 3).toLowerCase() : 'uds'}`}
                             </Badge>
                           </div>
                         </CardContent>
@@ -484,22 +490,22 @@ export function PosView() {
           <div className="lg:w-[40%] flex flex-col min-h-0">
             <Card className="flex-1 flex flex-col min-h-0">
               {/* Cart Header */}
-              <CardHeader className="pb-3">
+              <CardHeader className="pb-2 px-3 pt-3">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-base flex items-center gap-2">
+                  <CardTitle className="text-sm flex items-center gap-1.5">
                     <ShoppingCart className="h-4 w-4" />
-                    Carrito de Compras
+                    Carrito
                   </CardTitle>
                   {cart.length > 0 && (
-                    <Badge variant="secondary">{cart.length} item{cart.length !== 1 ? 's' : ''}</Badge>
+                    <Badge variant="secondary" className="text-[10px]">{cart.length}</Badge>
                   )}
                 </div>
               </CardHeader>
 
-              <CardContent className="flex-1 flex flex-col min-h-0 p-4 pt-0">
+              <CardContent className="flex-1 flex flex-col min-h-0 px-3 pb-3 pt-0">
                 {/* Client Selection */}
-                <div className="mb-3">
-                  <Label className="text-xs font-medium text-muted-foreground mb-1.5 block">Cliente</Label>
+                <div className="mb-2">
+                  <Label className="text-[11px] font-medium text-muted-foreground mb-1 block">Cliente</Label>
                   <Popover open={clientPopoverOpen} onOpenChange={setClientPopoverOpen}>
                     <PopoverTrigger asChild>
                       <Button
@@ -578,10 +584,10 @@ export function PosView() {
                   </Popover>
                 </div>
 
-                <Separator className="mb-3" />
+                <Separator className="mb-2" />
 
                 {/* Cart Items */}
-                <ScrollArea className="flex-1 min-h-0">
+                <ScrollArea className="max-h-[30vh] min-h-0">
                   {cart.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
                       <ShoppingCart className="h-8 w-8 mb-2 opacity-40" />
@@ -647,11 +653,11 @@ export function PosView() {
                   )}
                 </ScrollArea>
 
-                <Separator className="my-3" />
+                <Separator className="my-2" />
 
                 {/* Summary */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
+                <div className="space-y-1.5 shrink-0">
+                  <div className="flex items-center justify-between text-xs sm:text-sm">
                     <span className="text-muted-foreground">Subtotal</span>
                     <div className="text-right">
                       <span className="font-medium">{formatCurrency(cartSubtotal)}</span>
@@ -664,7 +670,7 @@ export function PosView() {
                   </div>
 
                   {/* Tax Toggle */}
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between text-xs sm:text-sm">
                     <div className="flex items-center gap-2">
                       <Switch
                         id="tax-toggle"
@@ -689,8 +695,8 @@ export function PosView() {
                   </div>
 
                   {/* Discount */}
-                  <div className="flex items-center justify-between gap-2">
-                    <Label className="text-sm text-muted-foreground whitespace-nowrap">Descuento</Label>
+                  <div className="flex items-center justify-between gap-2 text-xs sm:text-sm">
+                    <Label className="text-xs sm:text-sm text-muted-foreground whitespace-nowrap">Descuento</Label>
                     <div className="flex items-center gap-1">
                       <Input
                         type="number"
@@ -707,9 +713,9 @@ export function PosView() {
                   <Separator />
 
                   <div className="flex items-center justify-between">
-                    <span className="text-lg font-bold">Total</span>
+                    <span className="text-base sm:text-lg font-bold">Total</span>
                     <div className="text-right">
-                      <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
+                      <p className="text-lg sm:text-xl font-bold text-emerald-600 dark:text-emerald-400">
                         {formatCurrency(cartTotal)}
                       </p>
                       {dollarRate > 0 && cartTotal > 0 && (
@@ -722,8 +728,8 @@ export function PosView() {
                 </div>
 
                 {/* Payment Method */}
-                <div className="mt-3">
-                  <Label className="text-xs font-medium text-muted-foreground mb-1.5 block">
+                <div className="mt-2 shrink-0">
+                  <Label className="text-[11px] font-medium text-muted-foreground mb-1 block">
                     Método de Pago
                   </Label>
                   <div className="grid grid-cols-2 gap-1.5">
@@ -747,9 +753,9 @@ export function PosView() {
                 </div>
 
                 {/* Action Buttons */}
-                <div className="mt-3 space-y-2">
+                <div className="mt-2 space-y-1.5 shrink-0">
                   <Button
-                    className="w-full bg-emerald-600 hover:bg-emerald-700 h-11 text-base gap-2"
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 h-10 text-sm gap-2"
                     onClick={processInvoice}
                     disabled={cart.length === 0 || createInvoiceMutation.isPending}
                   >
