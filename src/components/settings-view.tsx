@@ -64,6 +64,11 @@ import {
   Trash2,
   Upload,
   Image as ImageIcon,
+  DownloadCloud,
+  CheckCircle2,
+  AlertCircle,
+  FileCode,
+  ExternalLink,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -325,6 +330,12 @@ export function SettingsView() {
             <Building2 className="w-4 h-4" />
             Configuración
           </TabsTrigger>
+          {(isDesarrollador || user?.role === 'ADMINISTRADOR') && (
+            <TabsTrigger value="updates" className="gap-1.5">
+              <DownloadCloud className="w-4 h-4" />
+              Actualizaciones
+            </TabsTrigger>
+          )}
         </TabsList>
 
         {/* ===== LICENSES TAB ===== */}
@@ -719,6 +730,13 @@ export function SettingsView() {
         <TabsContent value="dollar-rates" className="space-y-4 mt-4">
           <DollarRatesSection />
         </TabsContent>
+
+        {/* ===== UPDATES TAB ===== */}
+        {(isDesarrollador || user?.role === 'ADMINISTRADOR') && (
+          <TabsContent value="updates" className="space-y-4 mt-4">
+            <SystemUpdatesSection />
+          </TabsContent>
+        )}
 
         {/* ===== CONFIGURACIÓN TAB ===== */}
         <TabsContent value="config" className="space-y-4 mt-4">
@@ -1198,6 +1216,364 @@ function DollarRatesSection() {
           )}
         </CardContent>
       </Card>
+    </>
+  )
+}
+
+function SystemUpdatesSection() {
+  const [folderUrl, setFolderUrl] = useState('')
+  const [apiKey, setApiKey] = useState('')
+  const [checking, setChecking] = useState(false)
+  const [updatesData, setUpdatesData] = useState<any>(null)
+  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set())
+  const [applying, setApplying] = useState(false)
+  const [applyResults, setApplyResults] = useState<any>(null)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+
+  const availableUpdates = (updatesData?.availableUpdates || []) as Record<string, any>[]
+
+  const handleCheckUpdates = async () => {
+    if (!folderUrl || !apiKey) {
+      toast.error('Ingrese la URL de la carpeta y la API Key')
+      return
+    }
+    setChecking(true)
+    setUpdatesData(null)
+    setApplyResults(null)
+    setSelectedFiles(new Set())
+    try {
+      const data = await api.get(`/system/check-updates?folderUrl=${encodeURIComponent(folderUrl)}&apiKey=${encodeURIComponent(apiKey)}`)
+      setUpdatesData(data)
+      if (data.availableUpdates?.length > 0) {
+        toast.success(`${data.availableUpdates.length} actualizaciones disponibles`)
+      } else {
+        toast.info('No hay actualizaciones disponibles')
+      }
+    } catch (error: any) {
+      toast.error(error.message || 'Error al verificar actualizaciones')
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  const toggleFile = (fileId: string) => {
+    setSelectedFiles((prev) => {
+      const next = new Set(prev)
+      if (next.has(fileId)) {
+        next.delete(fileId)
+      } else {
+        next.add(fileId)
+      }
+      return next
+    })
+  }
+
+  const selectAll = () => {
+    setSelectedFiles(new Set(availableUpdates.map((f: Record<string, any>) => f.id as string)))
+  }
+
+  const deselectAll = () => {
+    setSelectedFiles(new Set())
+  }
+
+  const applyUpdatesMutation = useMutation({
+    mutationFn: (data: { files: string[]; apiKey: string }) =>
+      api.post('/system/check-updates', data),
+    onSuccess: (data) => {
+      setApplyResults(data)
+      setApplying(false)
+      setConfirmOpen(false)
+      toast.success('Actualizaciones aplicadas correctamente')
+    },
+    onError: (error: Error) => {
+      setApplying(false)
+      setConfirmOpen(false)
+      toast.error(error.message || 'Error al aplicar actualizaciones')
+    },
+  })
+
+  const handleApplyUpdates = () => {
+    if (selectedFiles.size === 0) {
+      toast.error('Seleccione al menos un archivo para actualizar')
+      return
+    }
+    setConfirmOpen(true)
+  }
+
+  const confirmApply = () => {
+    setApplying(true)
+    applyUpdatesMutation.mutate({
+      files: Array.from(selectedFiles),
+      apiKey,
+    })
+  }
+
+  return (
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <DownloadCloud className="w-5 h-5" />
+            Actualizar Sistema desde Google Drive
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* Folder URL Input */}
+          <div className="space-y-2">
+            <Label htmlFor="folderUrl">URL de Carpeta de Google Drive</Label>
+            <Input
+              id="folderUrl"
+              placeholder="https://drive.google.com/drive/folders/..."
+              value={folderUrl}
+              onChange={(e) => setFolderUrl(e.target.value)}
+            />
+          </div>
+
+          {/* API Key Input */}
+          <div className="space-y-2">
+            <Label htmlFor="apiKey">API Key de Google Drive</Label>
+            <Input
+              id="apiKey"
+              type="password"
+              placeholder="AIza..."
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+            />
+          </div>
+
+          {/* Info Box */}
+          <div className="rounded-lg border bg-muted/50 p-4 space-y-2">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 mt-0.5 text-muted-foreground flex-shrink-0" />
+              <div className="text-sm text-muted-foreground space-y-1">
+                <p className="font-medium text-foreground">¿Cómo obtener la API Key?</p>
+                <ol className="list-decimal list-inside space-y-0.5">
+                  <li>Ve a{' '}
+                    <a
+                      href="https://console.cloud.google.com/apis/credentials"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-emerald-600 hover:underline inline-flex items-center gap-0.5"
+                    >
+                      Google Cloud Console <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </li>
+                  <li>Crea un proyecto o selecciona uno existente</li>
+                  <li>Habilita la API de Google Drive</li>
+                  <li>Crea una credencial de API Key</li>
+                  <li>Asegúrate de que la carpeta sea pública o compartida con la cuenta de servicio</li>
+                </ol>
+              </div>
+            </div>
+          </div>
+
+          {/* Check Updates Button */}
+          <Button
+            onClick={handleCheckUpdates}
+            disabled={checking || !folderUrl || !apiKey}
+            className="bg-emerald-600 hover:bg-emerald-700 w-full sm:w-auto"
+          >
+            {checking ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                Verificando...
+              </>
+            ) : (
+              <>
+                <DownloadCloud className="w-4 h-4 mr-2" />
+                Verificar Actualizaciones
+              </>
+            )}
+          </Button>
+
+          {/* Updates Data Summary */}
+          {updatesData && (
+            <>
+              <Separator />
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="rounded-lg border p-4 text-center">
+                  <p className="text-2xl font-bold">{updatesData.totalFiles ?? 0}</p>
+                  <p className="text-sm text-muted-foreground">Total de archivos</p>
+                </div>
+                <div className="rounded-lg border p-4 text-center border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/20">
+                  <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">{availableUpdates.length}</p>
+                  <p className="text-sm text-muted-foreground">Actualizaciones disponibles</p>
+                </div>
+                <div className="rounded-lg border p-4 text-center border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/20">
+                  <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{updatesData.unchanged ?? 0}</p>
+                  <p className="text-sm text-muted-foreground">Sin cambios</p>
+                </div>
+              </div>
+
+              {/* Available Updates Table */}
+              {availableUpdates.length > 0 && (
+                <>
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                    <h3 className="text-sm font-medium">
+                      Archivos disponibles para actualizar ({availableUpdates.length})
+                    </h3>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={selectAll}>
+                        Seleccionar Todos
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={deselectAll}>
+                        Deseleccionar
+                      </Button>
+                    </div>
+                  </div>
+
+                  <ScrollArea className="max-h-96">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-12"></TableHead>
+                          <TableHead>Archivo</TableHead>
+                          <TableHead>Estado</TableHead>
+                          <TableHead className="hidden sm:table-cell">Modificado (Drive)</TableHead>
+                          <TableHead className="hidden md:table-cell">Modificado (Local)</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {availableUpdates.map((file: Record<string, any>) => (
+                          <TableRow
+                            key={file.id as string}
+                            className={selectedFiles.has(file.id as string) ? 'bg-emerald-50 dark:bg-emerald-950/20' : ''}
+                          >
+                            <TableCell>
+                              <input
+                                type="checkbox"
+                                checked={selectedFiles.has(file.id as string)}
+                                onChange={() => toggleFile(file.id as string)}
+                                className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <FileCode className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                                <span className="font-medium text-sm truncate max-w-[200px] sm:max-w-none">
+                                  {file.name as string}
+                                </span>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge
+                                className={
+                                  file.status === 'new'
+                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
+                                    : 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400'
+                                }
+                              >
+                                {file.status === 'new' ? 'Nuevo' : 'Actualizado'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
+                              {file.driveModified ? formatDate(file.driveModified as string) : '-'}
+                            </TableCell>
+                            <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
+                              {file.localModified ? formatDate(file.localModified as string) : '-'}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </ScrollArea>
+
+                  {/* Apply Updates Button */}
+                  <div className="flex justify-end">
+                    <Button
+                      onClick={handleApplyUpdates}
+                      disabled={selectedFiles.size === 0 || applying}
+                      className="bg-emerald-600 hover:bg-emerald-700"
+                    >
+                      {applying ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                          Aplicando...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="w-4 h-4 mr-2" />
+                          Aplicar Actualizaciones ({selectedFiles.size})
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </>
+              )}
+            </>
+          )}
+
+          {/* Apply Results */}
+          {applyResults && (
+            <>
+              <Separator />
+              <div className="rounded-lg border p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                  <h3 className="font-medium">Resultado de la actualización</h3>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                  {applyResults.applied?.length > 0 && (
+                    <div className="rounded-md bg-emerald-50 dark:bg-emerald-950/20 p-3">
+                      <p className="font-medium text-emerald-700 dark:text-emerald-400 mb-1">
+                        Aplicados ({applyResults.applied.length})
+                      </p>
+                      <ul className="space-y-0.5 text-emerald-600 dark:text-emerald-400">
+                        {applyResults.applied.map((name: string, i: number) => (
+                          <li key={i} className="truncate">{name}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {applyResults.failed?.length > 0 && (
+                    <div className="rounded-md bg-red-50 dark:bg-red-950/20 p-3">
+                      <p className="font-medium text-red-700 dark:text-red-400 mb-1">
+                        Fallidos ({applyResults.failed.length})
+                      </p>
+                      <ul className="space-y-0.5 text-red-600 dark:text-red-400">
+                        {applyResults.failed.map((item: { name: string; error: string }, i: number) => (
+                          <li key={i} className="truncate">{item.name}: {item.error}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Confirmation AlertDialog */}
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar Actualización</AlertDialogTitle>
+            <AlertDialogDescription>
+              ¿Está seguro de que desea aplicar {selectedFiles.size} actualización(es)?
+              Esto modificará archivos del sistema y los cambios no se pueden deshacer automáticamente.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={applying}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmApply}
+              disabled={applying}
+              className="bg-emerald-600 hover:bg-emerald-700"
+            >
+              {applying ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  Aplicando...
+                </>
+              ) : (
+                'Confirmar'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   )
 }
