@@ -147,3 +147,25 @@ Stage Summary:
 - PO dialog footer buttons always accessible
 - Per-client custom prices with upsert support
 - Account statement with WhatsApp, cobro, running balance
+
+---
+Task ID: 5
+Agent: Main Agent
+Task: Fix 500 error on POST /api/products - Prisma Client not regenerated
+
+Work Log:
+- User reported 500 Internal Server Error when creating products with unitOfMeasure field
+- Root cause: Prisma schema was updated with unitOfMeasure field but Prisma Client was not regenerated after the previous session's schema changes
+- The running Next.js dev server was using a stale Prisma Client that didn't recognize unitOfMeasure
+- Ran `bunx prisma generate` to regenerate Prisma Client with the new field
+- Cleared .next cache to ensure Turbopack picks up the new client
+- Verified product creation works via API: created PROD-004 (Pepsi 2L, LITRO, 6 units) and PROD-005 (Huevos, CARTON, 0.5 units) - both returned 201
+- Verified in browser: inventory view shows products with correct unit abbreviations (0.5 crt, 6 lt, 50 und)
+- Lint passes cleanly
+- No errors in dev server logs after fix
+
+Stage Summary:
+- 500 error on POST /api/products FIXED by regenerating Prisma Client
+- Product creation with unitOfMeasure works correctly (tested with UNIDAD, LITRO, CARTON)
+- Decimal quantities display correctly in inventory table (0.5 crt, 6 lt, 50 und)
+- All 5 features from previous session are working
