@@ -1463,3 +1463,4 @@
  GET /api/notifications 200 in 5ms (compile: 1566µs, render: 4ms)
  GET /api/dashboard 200 in 15ms (compile: 1806µs, render: 13ms)
  GET /api/licenses/status 200 in 6ms (compile: 1823µs, render: 4ms)
+ GET /api/products?lowStock=true 200 in 7ms (compile: 2ms, render: 5ms)

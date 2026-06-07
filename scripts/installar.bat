@@ -1,23 +1,23 @@
 @echo off
 chcp 65001 >nul 2>&1
-title FacturaPro - Instalación
+title FacturaPro - InstalaciÃ³n
 color 0A
 
-echo ╔══════════════════════════════════════════════════════════════╗
-echo ║           FacturaPro - Instalación Inicial                 ║
-echo ║     Sistema de Facturación e Inventario                    ║
-echo ║     © Zeus Rodriguez - Todos los derechos reservados       ║
-echo ╚══════════════════════════════════════════════════════════════╝
+echo ==============================================================
+echo   FacturaPro - Instalacion Inicial
+echo   Sistema de Facturacion e Inventario
+echo   (c) Zeus Rodriguez - Todos los derechos reservados
+echo ==============================================================
 echo.
 
-:: Verificar si Bun está instalado
+:: Verificar si Bun estÃ¡ instalado
 where bun >nul 2>&1
 if %errorlevel% neq 0 (
-    echo [!] Bun no está instalado. Instalando Bun...
+    echo [!] Bun no estÃ¡ instalado. Instalando Bun...
     echo.
     powershell -Command "irm bun.sh/install.ps1 | iex"
     if %errorlevel% neq 0 (
-        echo [ERROR] No se pudo instalar Bun automáticamente.
+        echo [ERROR] No se pudo instalar Bun automÃ¡ticamente.
         echo Por favor instale Bun desde: https://bun.sh
         echo Luego ejecute este script nuevamente.
         pause
@@ -27,7 +27,7 @@ if %errorlevel% neq 0 (
     set "PATH=%USERPROFILE%\.bun\bin;%PATH%"
 )
 
-echo [✓] Bun encontrado
+echo [OK] Bun encontrado
 echo.
 
 :: Navegar al directorio del proyecto
@@ -40,7 +40,7 @@ if %errorlevel% neq 0 (
     pause
     exit /b 1
 )
-echo [✓] Dependencias instaladas
+echo [OK] Dependencias instaladas
 echo.
 
 echo [*] Configurando base de datos...
@@ -50,7 +50,7 @@ if %errorlevel% neq 0 (
     pause
     exit /b 1
 )
-echo [✓] Base de datos configurada
+echo [OK] Base de datos configurada
 echo.
 
 echo [*] Generando cliente Prisma...
@@ -60,7 +60,7 @@ if %errorlevel% neq 0 (
     pause
     exit /b 1
 )
-echo [✓] Cliente Prisma generado
+echo [OK] Cliente Prisma generado
 echo.
 
 echo [*] Cargando datos iniciales...
@@ -68,18 +68,18 @@ call bun run db:seed
 if %errorlevel% neq 0 (
     echo [!] No se pudieron cargar los datos iniciales (puede que ya existan)
 ) else (
-    echo [✓] Datos iniciales cargados
+    echo [OK] Datos iniciales cargados
 )
 echo.
 
-echo ╔══════════════════════════════════════════════════════════════╗
-echo ║              ✓ INSTALACIÓN COMPLETADA                      ║
-echo ║                                                              ║
-echo ║  Credenciales por defecto:                                   ║
-echo ║    Usuario: admin                                            ║
-echo ║    Contraseña: admin123                                      ║
-echo ║                                                              ║
-echo ║  Ejecute "iniciar.bat" para arrancar el sistema.            ║
-echo ╚══════════════════════════════════════════════════════════════╝
+echo ==============================================================
+echo   [OK] INSTALACION COMPLETADA
+echo
+echo   Credenciales por defecto:
+echo     Usuario: admin
+echo     Contrasena: admin123
+echo
+echo   Ejecute "iniciar.bat" para arrancar el sistema.
+echo ==============================================================
 echo.
 pause
