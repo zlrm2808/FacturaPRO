@@ -93,8 +93,11 @@ export async function GET(request: Request) {
       // Pending invoices
       db.invoice.count({ where: { status: 'PENDIENTE' } }),
 
-      // Overdue invoices
-      db.invoice.count({ where: { status: 'VENCIDA' } }),
+      // All pending/overdue invoices to count overdue dynamically
+      db.invoice.findMany({
+        where: { status: { in: ['PENDIENTE', 'VENCIDA'] } },
+        select: { id: true, status: true, paymentMethod: true, date: true, creditDays: true },
+      }),
 
       // Recent transactions (last 5)
       db.transaction.findMany({
@@ -117,6 +120,16 @@ export async function GET(request: Request) {
       (p) => p.quantity <= p.minStock
     ).length
 
+    const overdueInvoicesCount = overdueInvoices.filter((invoice) => {
+      if (invoice.status === 'VENCIDA') return true
+      if (invoice.status === 'PENDIENTE' && invoice.paymentMethod === 'CREDITO') {
+        const dueDate = new Date(invoice.date)
+        dueDate.setDate(dueDate.getDate() + (invoice.creditDays || 0))
+        return dueDate <= now
+      }
+      return false
+    }).length
+
     return NextResponse.json({
       salesToday: salesToday._sum.total || 0,
       salesTodayBs: salesToday._sum.totalBs || 0,
@@ -129,7 +142,7 @@ export async function GET(request: Request) {
       totalProducts,
       lowStockCount,
       pendingInvoices,
-      overdueInvoices,
+      overdueInvoices: overdueInvoicesCount,
       recentTransactions,
       topSellingProducts,
       revenueChartData,

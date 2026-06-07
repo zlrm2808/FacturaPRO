@@ -2,15 +2,17 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getUserFromRequest } from '@/lib/auth'
 
-function calcDaysOverdue(dateStr: string | Date): number {
+function calcDaysOverdue(dateStr: string | Date, creditDays: number = 0): number {
   const d = new Date(dateStr)
+  d.setDate(d.getDate() + creditDays)
   const now = new Date()
   const diffMs = now.getTime() - d.getTime()
-  return Math.floor(diffMs / (1000 * 60 * 60 * 24))
+  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+  return days > 0 ? days : 0
 }
 
 // GET /api/invoices/overdue - Get all overdue/vencida invoices grouped by client
-// Also includes PENDIENTE invoices older than 30 days (auto-mark as vencida concept)
+// Also includes PENDIENTE invoices older than their credit days
 export async function GET(request: Request) {
   try {
     const user = getUserFromRequest(request)
@@ -18,20 +20,10 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
 
-    // Calculate date 30 days ago
-    const thirtyDaysAgo = new Date()
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-
-    // Get all VENCIDA invoices + PENDIENTE invoices older than 30 days
-    const overdueInvoices = await db.invoice.findMany({
+    // Get all PENDIENTE + VENCIDA invoices
+    const allPendingOrOverdue = await db.invoice.findMany({
       where: {
-        OR: [
-          { status: 'VENCIDA' },
-          {
-            status: 'PENDIENTE',
-            date: { lte: thirtyDaysAgo },
-          },
-        ],
+        status: { in: ['PENDIENTE', 'VENCIDA'] },
       },
       include: {
         client: {
@@ -45,6 +37,17 @@ export async function GET(request: Request) {
         },
       },
       orderBy: { date: 'asc' },
+    })
+
+    const now = new Date()
+    const overdueInvoices = allPendingOrOverdue.filter((invoice) => {
+      if (invoice.status === 'VENCIDA') return true
+      if (invoice.status === 'PENDIENTE' && invoice.paymentMethod === 'CREDITO') {
+        const dueDate = new Date(invoice.date)
+        dueDate.setDate(dueDate.getDate() + (invoice.creditDays || 0))
+        return dueDate <= now
+      }
+      return false
     })
 
     // Group invoices by client and calculate days overdue
@@ -69,7 +72,7 @@ export async function GET(request: Request) {
       }
 
       const group = clientMap.get(clientId)!
-      const daysOverdue = calcDaysOverdue(invoice.date)
+      const daysOverdue = calcDaysOverdue(invoice.date, invoice.creditDays || 0)
       group.invoices.push({
         id: invoice.id,
         number: invoice.number,

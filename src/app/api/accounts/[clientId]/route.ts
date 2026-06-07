@@ -4,7 +4,7 @@ import { getUserFromRequest } from '@/lib/auth'
 
 export async function GET(
   request: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ clientId: string }> }
 ) {
   try {
     const payload = getUserFromRequest(request)
@@ -15,7 +15,7 @@ export async function GET(
       )
     }
 
-    const { id: clientId } = await params
+    const { clientId } = await params
 
     const client = await db.client.findUnique({
       where: { id: clientId },

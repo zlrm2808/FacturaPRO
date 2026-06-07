@@ -126,6 +126,7 @@ export function PosView() {
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
   const [selectedClientName, setSelectedClientName] = useState<string>('')
   const [paymentMethod, setPaymentMethod] = useState('EFECTIVO')
+  const [creditDays, setCreditDays] = useState(0)
   const [discount, setDiscount] = useState(0)
   const [taxEnabled, setTaxEnabled] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
@@ -299,6 +300,7 @@ export function PosView() {
       paymentMethod,
       discount,
       notes: '',
+      creditDays: paymentMethod === 'CREDITO' ? creditDays : 0,
       items: cart.map((item) => ({
         productId: item.productId,
         quantity: item.quantity,
@@ -328,6 +330,7 @@ export function PosView() {
     setSelectedClientId(null)
     setSelectedClientName('')
     setPaymentMethod('EFECTIVO')
+    setCreditDays(0)
     setTaxEnabled(true)
     setSearchTerm('')
     setSelectedCategory('all')
@@ -743,7 +746,12 @@ export function PosView() {
                             ? method.color
                             : ''
                         }`}
-                        onClick={() => setPaymentMethod(method.value)}
+                        onClick={() => {
+                          setPaymentMethod(method.value)
+                          if (method.value !== 'CREDITO') {
+                            setCreditDays(0)
+                          }
+                        }}
                       >
                         <method.icon className="h-3.5 w-3.5" />
                         {method.label}
@@ -751,6 +759,23 @@ export function PosView() {
                     ))}
                   </div>
                 </div>
+
+                {paymentMethod === 'CREDITO' && (
+                  <div className="mt-2 shrink-0">
+                    <Label className="text-[11px] font-medium text-muted-foreground mb-1 block">
+                      Días de Crédito
+                    </Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={creditDays || ''}
+                      onChange={(e) => setCreditDays(Math.max(1, parseInt(e.target.value) || 0))}
+                      className="h-9 text-sm"
+                      placeholder="Ej. 15, 30"
+                      required
+                    />
+                  </div>
+                )}
 
                 {/* Action Buttons */}
                 <div className="mt-2 space-y-1.5 shrink-0">

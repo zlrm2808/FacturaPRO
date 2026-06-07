@@ -163,6 +163,7 @@ export function InvoicingView() {
   const [selectedClientId, setSelectedClientId] = useState<string>('')
   const [selectedClientName, setSelectedClientName] = useState('')
   const [paymentMethod, setPaymentMethod] = useState('EFECTIVO')
+  const [creditDays, setCreditDays] = useState(0)
   const [discount, setDiscount] = useState(0)
   const [taxEnabled, setTaxEnabled] = useState(true)
   const [notes, setNotes] = useState('')
@@ -321,6 +322,7 @@ export function InvoicingView() {
     setSelectedClientId('')
     setSelectedClientName('')
     setPaymentMethod('EFECTIVO')
+    setCreditDays(0)
     setDiscount(0)
     setTaxEnabled(true)
     setNotes('')
@@ -344,6 +346,7 @@ export function InvoicingView() {
       paymentMethod,
       discount,
       notes,
+      creditDays: paymentMethod === 'CREDITO' ? creditDays : 0,
       items: lineItems.map((item) => ({
         productId: item.productId,
         quantity: item.quantity,
@@ -584,7 +587,12 @@ export function InvoicingView() {
                             className={`h-9 text-xs gap-1.5 justify-center ${
                               paymentMethod === method.value ? method.color : ''
                             }`}
-                            onClick={() => setPaymentMethod(method.value)}
+                            onClick={() => {
+                              setPaymentMethod(method.value)
+                              if (method.value !== 'CREDITO') {
+                                setCreditDays(0)
+                              }
+                            }}
                           >
                             <method.icon className="h-3.5 w-3.5" />
                             {method.label}
@@ -592,6 +600,21 @@ export function InvoicingView() {
                         ))}
                       </div>
                     </div>
+
+                    {paymentMethod === 'CREDITO' && (
+                      <div>
+                        <Label className="text-xs font-medium text-muted-foreground mb-1 block">Días de Crédito</Label>
+                        <Input
+                          type="number"
+                          min={1}
+                          value={creditDays || ''}
+                          onChange={(e) => setCreditDays(Math.max(1, parseInt(e.target.value) || 0))}
+                          className="h-10 text-sm"
+                          placeholder="Ej. 15, 30"
+                          required
+                        />
+                      </div>
+                    )}
 
                     {/* Tax & Discount */}
                     <div className="space-y-3">

@@ -82,7 +82,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const { clientId, items, paymentMethod, discount, notes } = body
+    const { clientId, items, paymentMethod, discount, notes, creditDays } = body
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return NextResponse.json({ error: 'La factura debe tener al menos un item' }, { status: 400 })
@@ -166,6 +166,7 @@ export async function POST(request: Request) {
           dollarRate,
           status: 'PENDIENTE',
           paymentMethod: paymentMethod || 'EFECTIVO',
+          creditDays: creditDays ? parseInt(String(creditDays), 10) : 0,
           notes: notes?.trim() || null,
           clientId: clientId || null,
           userId: user.userId,

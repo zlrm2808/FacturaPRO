@@ -194,6 +194,7 @@ model Invoice {
   dollarRate    Float    @default(0) // Official rate used for conversion
   status        String   @default("PENDIENTE") // PAGADA, PENDIENTE, VENCIDA, ANULADA
   paymentMethod String   @default("EFECTIVO") // EFECTIVO, TRANSFERENCIA, TARJETA, CREDITO
+  creditDays    Int      @default(0)
   notes         String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -208,6 +209,7 @@ model Invoice {
   accountEntries AccountEntry[]
   transactions Transaction[]
 }
+
 
 model InvoiceItem {
   id         String  @id @default(cuid())
