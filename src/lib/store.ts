@@ -19,6 +19,7 @@ interface AuthState {
 interface AppState {
   currentPage: AppPage
   selectedClientId: string | null
+  selectedInvoiceId: string | null
   sidebarOpen: boolean
   sidebarCollapsed: boolean
   lowStockFilterActive: boolean
@@ -26,6 +27,7 @@ interface AppState {
   billingMode: BillingMode
   setCurrentPage: (page: AppPage) => void
   setSelectedClientId: (id: string | null) => void
+  setSelectedInvoiceId: (id: string | null) => void
   setSidebarOpen: (open: boolean) => void
   setSidebarCollapsed: (collapsed: boolean) => void
   setLowStockFilterActive: (v: boolean) => void
@@ -110,6 +112,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 export const useAppStore = create<AppState>((set) => ({
   currentPage: 'dashboard',
   selectedClientId: null,
+  selectedInvoiceId: null,
   sidebarOpen: true,
   sidebarCollapsed: false,
   lowStockFilterActive: false,
@@ -117,6 +120,7 @@ export const useAppStore = create<AppState>((set) => ({
   billingMode: 'pos',
   setCurrentPage: (page) => set({ currentPage: page }),
   setSelectedClientId: (id) => set({ selectedClientId: id }),
+  setSelectedInvoiceId: (id) => set({ selectedInvoiceId: id }),
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
   setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
   setLowStockFilterActive: (v) => set({ lowStockFilterActive: v }),

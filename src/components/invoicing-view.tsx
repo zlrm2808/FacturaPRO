@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { formatCurrency, formatBs, formatDateTime, formatDate, getStatusColor, getPaymentMethodLabel } from '@/lib/format'
+import { useAppStore } from '@/lib/store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -63,6 +64,15 @@ import {
   PenLine,
   ArrowLeft,
 } from 'lucide-react'
+import {
+  Combobox,
+  ComboboxInput,
+  ComboboxContent,
+  ComboboxList,
+  ComboboxItem,
+  ComboboxEmpty,
+  ComboboxTrigger,
+} from './ui/combobox'
 
 interface InvoiceLineItem {
   productId: string
@@ -180,6 +190,8 @@ export function InvoicingView() {
   // Invoice detail
   const [selectedInvoice, setSelectedInvoice] = useState<InvoiceDetail | null>(null)
   const [invoiceDialogOpen, setInvoiceDialogOpen] = useState(false)
+  const selectedInvoiceId = useAppStore((state) => state.selectedInvoiceId)
+  const setSelectedInvoiceId = useAppStore((state) => state.setSelectedInvoiceId)
 
   // Fetch dollar rate
   const { data: dollarRateData } = useQuery({
@@ -195,6 +207,8 @@ export function InvoicingView() {
     queryFn: () => {
       const params = new URLSearchParams()
       if (productSearch) params.set('search', productSearch)
+      // Only fetch available products for invoicing
+      params.set('available', 'true')
       return api.get(`/products?${params.toString()}`)
     },
   })
@@ -248,9 +262,20 @@ export function InvoicingView() {
     },
   })
 
+  // Fetch company config to determine default tax rate
+  const { data: companyData } = useQuery({ queryKey: ['company'], queryFn: () => api.get('/company') })
+
+  useEffect(() => {
+    if (companyData) {
+      setTaxEnabled((companyData.taxRate ?? 16) !== 0)
+    }
+  }, [companyData])
+
   // Calculations
   const subtotal = useMemo(() => lineItems.reduce((sum, item) => sum + item.subtotal, 0), [lineItems])
-  const tax = useMemo(() => taxEnabled ? Math.max(0, subtotal - discount) * 0.16 : 0, [subtotal, discount, taxEnabled])
+  const companyTaxPercent = companyData?.taxRate ?? 16
+  const companyTaxRate = companyTaxPercent / 100
+  const tax = useMemo(() => taxEnabled ? Math.max(0, subtotal - discount) * companyTaxRate : 0, [subtotal, discount, taxEnabled, companyTaxRate])
   const total = useMemo(() => {
     const taxable = Math.max(0, subtotal - discount)
     return taxable > 0 ? taxable + tax : 0
@@ -347,6 +372,7 @@ export function InvoicingView() {
       discount,
       notes,
       creditDays: paymentMethod === 'CREDITO' ? creditDays : 0,
+      taxEnabled,
       items: lineItems.map((item) => ({
         productId: item.productId,
         quantity: item.quantity,
@@ -368,6 +394,12 @@ export function InvoicingView() {
       toast.error('Error al cargar detalle de factura')
     }
   }
+
+  useEffect(() => {
+    if (!selectedInvoiceId) return
+    viewInvoice(selectedInvoiceId)
+    setSelectedInvoiceId(null)
+  }, [selectedInvoiceId, setSelectedInvoiceId])
 
   // Update invoice status
   const updateInvoiceStatus = async (invoiceId: string, status: string) => {
@@ -494,163 +526,176 @@ export function InvoicingView() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {/* Client Selection */}
-                    <div className="sm:col-span-2">
-                      <Label className="text-xs font-medium text-muted-foreground mb-1 block">Cliente</Label>
-                      <Popover open={clientPopoverOpen} onOpenChange={setClientPopoverOpen}>
-                        <PopoverTrigger asChild>
-                          <Button
-                            variant="outline"
-                            className="w-full justify-between text-sm font-normal h-10"
-                          >
-                            {selectedClientId ? (
-                              <span className="truncate">{selectedClientName}</span>
-                            ) : (
-                              <span className="text-muted-foreground">Seleccionar cliente...</span>
-                            )}
-                            <ChevronDown className="h-4 w-4 opacity-50 shrink-0" />
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="p-0 w-[var(--radix-popover-trigger-width)]" align="start">
-                          <div className="p-2">
-                            <div className="relative">
-                              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                              <Input
-                                placeholder="Buscar cliente..."
-                                value={clientSearch}
-                                onChange={(e) => setClientSearch(e.target.value)}
-                                className="pl-8 h-8 text-sm"
-                              />
-                            </div>
-                          </div>
-                          <ScrollArea className="max-h-52">
-                            <div className="p-1">
-                              <div
-                                onClick={() => {
-                                  setSelectedClientId('')
-                                  setSelectedClientName('')
-                                  setClientPopoverOpen(false)
-                                  setClientSearch('')
-                                }}
-                                className="flex items-center px-2 py-1.5 text-sm rounded-sm cursor-pointer hover:bg-accent hover:text-accent-foreground text-muted-foreground"
-                              >
-                                <X className="h-3 w-3 mr-2" />
-                                Sin cliente (Consumidor)
-                              </div>
-                              {clientsLoading ? (
-                                <div className="flex items-center justify-center py-4">
-                                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                                </div>
-                              ) : (
-                                clients.map((client) => (
-                                  <div
-                                    key={client.id}
-                                    onClick={() => {
-                                      setSelectedClientId(client.id)
-                                      setSelectedClientName(client.name)
-                                      setClientPopoverOpen(false)
-                                      setClientSearch('')
-                                    }}
-                                    className="flex items-center px-2 py-1.5 text-sm rounded-sm cursor-pointer hover:bg-accent hover:text-accent-foreground"
-                                  >
-                                    <User className="h-3 w-3 mr-2 shrink-0" />
-                                    <div className="flex-1 min-w-0">
-                                      <span className="truncate">{client.name}</span>
-                                      {client.rncCedula && (
-                                        <span className="ml-2 text-xs text-muted-foreground">{client.rncCedula}</span>
-                                      )}
-                                    </div>
-                                    {client.balance > 0 && (
-                                      <Badge variant="outline" className="ml-2 text-[10px] px-1 border-amber-300 text-amber-700">
-                                        {formatCurrency(client.balance)}
-                                      </Badge>
-                                    )}
-                                  </div>
-                                ))
-                              )}
-                            </div>
-                          </ScrollArea>
-                        </PopoverContent>
-                      </Popover>
-                    </div>
+                  {/* Client Selection */}
+                  <div className="sm:col-span-2 -mt-6">
+                    <Label className="text-xs font-medium text-muted-foreground mb-1 block">Cliente</Label>
+                    <Combobox
+                      open={clientPopoverOpen}
+                      onOpenChange={setClientPopoverOpen}
+                      value={selectedClientId}
+                      onValueChange={(value) => {
+                        // Buscamos el cliente seleccionado para actualizar también el nombre
+                        const client = clients.find((c) => c.id === value);
+                        if (client) {
+                          setSelectedClientId(client.id);
+                          setSelectedClientName(client.name);
+                        } else {
+                          // Por si se selecciona la opción "Sin cliente"
+                          setSelectedClientId('');
+                          setSelectedClientName('');
+                        }
+                      }}
+                    >
+                      {/* El disparador ahora usa los estilos de tu botón anterior */}
+                      <ComboboxTrigger className="flex w-full items-center justify-between rounded-md border border-input bg-background h-10 px-3 text-sm font-normal shadow-xs hover:bg-accent hover:text-accent-foreground focus:outline-hidden disabled:cursor-not-allowed disabled:opacity-50">
+                        {selectedClientId ? (
+                          <span className="truncate">{selectedClientName}</span>
+                        ) : (
+                          <span className="text-muted-foreground">Seleccionar cliente...</span>
+                        )}
+                      </ComboboxTrigger>
 
-                    {/* Payment Method */}
-                    <div>
-                      <Label className="text-xs font-medium text-muted-foreground mb-1.5 block">Método de Pago</Label>
-                      <div className="grid grid-cols-2 gap-1.5">
-                        {PAYMENT_METHODS.map((method) => (
-                          <Button
-                            key={method.value}
-                            variant="outline"
-                            size="sm"
-                            className={`h-9 text-xs gap-1.5 justify-center ${
-                              paymentMethod === method.value ? method.color : ''
-                            }`}
+                      <ComboboxContent align="start">
+                        {/* Input de búsqueda interno del Combobox */}
+                        <ComboboxInput
+                          placeholder="Buscar cliente..."
+                          value={clientSearch}
+                          onChange={(e) => setClientSearch(e.target.value)}
+                          className="m-1 h-8 text-sm"
+                          showTrigger={false} // Ocultamos la flecha interna ya que el trigger principal la tiene
+                        />
+
+                        <ComboboxList>
+                          {/* Opción por defecto: Sin Cliente */}
+                          <ComboboxItem
+                            value=""
                             onClick={() => {
-                              setPaymentMethod(method.value)
-                              if (method.value !== 'CREDITO') {
-                                setCreditDays(0)
-                              }
+                              setSelectedClientId('');
+                              setSelectedClientName('');
+                              setClientSearch('');
                             }}
+                            className="text-muted-foreground"
                           >
-                            <method.icon className="h-3.5 w-3.5" />
-                            {method.label}
-                          </Button>
-                        ))}
-                      </div>
+                            <X className="h-3 w-3 mr-2 shrink-0" />
+                            Sin cliente (Consumidor)
+                          </ComboboxItem>
+
+                          {/* Estado de Carga */}
+                          {clientsLoading ? (
+                            <div className="flex items-center justify-center py-4">
+                              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                            </div>
+                          ) : (
+                            /* Mapeo de Clientes */
+                            clients.map((client) => (
+                              <ComboboxItem
+                                key={client.id}
+                                value={client.id}
+                                className="flex items-center justify-between"
+                              >
+                                <div className="flex items-center min-w-0 flex-1">
+                                  <User className="h-3 w-3 mr-2 shrink-0 text-muted-foreground" />
+                                  <span className="truncate">{client.name}</span>
+                                  {client.rncCedula && (
+                                    <span className="ml-2 text-xs text-muted-foreground truncate">
+                                      ({client.rncCedula})
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Badge de Balance */}
+                                {client.balance > 0 && (
+                                  <Badge
+                                    variant="outline"
+                                    className="ml-2 text-[10px] px-1 border-amber-300 text-amber-700 whitespace-nowrap"
+                                  >
+                                    {formatCurrency(client.balance)}
+                                  </Badge>
+                                )}
+                              </ComboboxItem>
+                            ))
+                          )}
+
+                          {/* Mensaje si la lista está vacía tras filtrar */}
+                          <ComboboxEmpty>No se encontraron clientes</ComboboxEmpty>
+                        </ComboboxList>
+                      </ComboboxContent>
+                    </Combobox>
+                  </div>
+                  {/* Payment Method */}
+                  <div>
+                    <Label className="text-xs font-medium text-muted-foreground mb-1.5 block">Método de Pago</Label>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {PAYMENT_METHODS.map((method) => (
+                        <Button
+                          key={method.value}
+                          variant="outline"
+                          size="sm"
+                          className={`h-9 text-xs gap-1.5 justify-center ${paymentMethod === method.value ? method.color : ''
+                            }`}
+                          onClick={() => {
+                            setPaymentMethod(method.value)
+                            if (method.value !== 'CREDITO') {
+                              setCreditDays(0)
+                            }
+                          }}
+                        >
+                          <method.icon className="h-3.5 w-3.5" />
+                          {method.label}
+                        </Button>
+                      ))}
                     </div>
+                  </div>
 
-                    {paymentMethod === 'CREDITO' && (
-                      <div>
-                        <Label className="text-xs font-medium text-muted-foreground mb-1 block">Días de Crédito</Label>
-                        <Input
-                          type="number"
-                          min={1}
-                          value={creditDays || ''}
-                          onChange={(e) => setCreditDays(Math.max(1, parseInt(e.target.value) || 0))}
-                          className="h-10 text-sm"
-                          placeholder="Ej. 15, 30"
-                          required
-                        />
-                      </div>
-                    )}
-
-                    {/* Tax & Discount */}
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-2">
-                        <Switch
-                          id="tax-toggle"
-                          checked={taxEnabled}
-                          onCheckedChange={setTaxEnabled}
-                          className="scale-90 origin-left"
-                        />
-                        <Label htmlFor="tax-toggle" className="text-sm cursor-pointer">IVA (16%)</Label>
-                      </div>
-                      <div>
-                        <Label className="text-xs text-muted-foreground">Descuento Global ($)</Label>
-                        <Input
-                          type="number"
-                          min={0}
-                          max={subtotal}
-                          value={discount || ''}
-                          onChange={(e) => setDiscount(Math.max(0, parseFloat(e.target.value) || 0))}
-                          className="h-9 text-sm mt-1"
-                          placeholder="0.00"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Notes */}
-                    <div className="sm:col-span-2">
-                      <Label className="text-xs text-muted-foreground">Notas / Observaciones</Label>
-                      <Textarea
-                        value={notes}
-                        onChange={(e) => setNotes(e.target.value)}
-                        className="mt-1 text-sm min-h-[60px]"
-                        placeholder="Notas adicionales..."
+                  {paymentMethod === 'CREDITO' && (
+                    <div>
+                      <Label className="text-xs font-medium text-muted-foreground mb-1 block">Días de Crédito</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={creditDays || ''}
+                        onChange={(e) => setCreditDays(Math.max(1, parseInt(e.target.value) || 0))}
+                        className="h-10 text-sm"
+                        placeholder="Ej. 15, 30"
+                        required
                       />
                     </div>
+                  )}
+
+                  {/* Tax & Discount */}
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        id="tax-toggle"
+                        checked={taxEnabled}
+                        onCheckedChange={setTaxEnabled}
+                        className="scale-90 origin-left"
+                      />
+                      <Label htmlFor="tax-toggle" className="text-sm cursor-pointer">IVA ({companyTaxPercent}%)</Label>
+                    </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Descuento Global ($)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={subtotal}
+                        value={discount || ''}
+                        onChange={(e) => setDiscount(Math.max(0, parseFloat(e.target.value) || 0))}
+                        className="h-9 text-sm mt-1"
+                        placeholder="0.00"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Notes */}
+                  <div className="sm:col-span-2">
+                    <Label className="text-xs text-muted-foreground">Notas / Observaciones</Label>
+                    <Textarea
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value)}
+                      className="mt-1 text-sm min-h-[60px]"
+                      placeholder="Notas adicionales..."
+                    />
                   </div>
                 </CardContent>
               </Card>
@@ -664,72 +709,82 @@ export function InvoicingView() {
                       Productos / Líneas
                     </CardTitle>
                     {/* Add Product Popover */}
-                    <Popover open={productSearchOpen} onOpenChange={setProductSearchOpen}>
-                      <PopoverTrigger asChild>
-                        <Button variant="outline" size="sm" className="gap-1.5 text-xs">
-                          <Plus className="h-3.5 w-3.5" />
-                          Agregar Producto
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="p-0 w-80" align="end">
-                        <div className="p-2">
-                          <div className="relative">
-                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                            <Input
-                              placeholder="Buscar por nombre o código..."
-                              value={productSearch}
-                              onChange={(e) => setProductSearch(e.target.value)}
-                              className="pl-8 h-8 text-sm"
-                              autoFocus
-                            />
-                          </div>
-                        </div>
-                        <ScrollArea className="max-h-56">
-                          <div className="p-1">
-                            {productsLoading ? (
-                              <div className="flex items-center justify-center py-4">
-                                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                              </div>
-                            ) : activeProducts.length === 0 ? (
-                              <div className="px-2 py-4 text-center text-sm text-muted-foreground">
-                                No se encontraron productos
-                              </div>
-                            ) : (
-                              activeProducts.map((product) => {
-                                const clientPrice = selectedClientId ? clientPrices.find((cp: any) => cp.productId === product.id) : null
-                                const effectivePrice = clientPrice ? clientPrice.customPrice : product.salePrice
-                                const inList = lineItems.find((l) => l.productId === product.id)
-                                return (
-                                  <div
-                                    key={product.id}
-                                    onClick={() => addProduct(product)}
-                                    className={`flex items-center px-2 py-1.5 text-sm rounded-sm cursor-pointer hover:bg-accent hover:text-accent-foreground ${
-                                      inList ? 'bg-emerald-50 dark:bg-emerald-900/20' : ''
+                    <Combobox open={productSearchOpen} onOpenChange={setProductSearchOpen}>
+                      {/* El disparador ahora actúa como el botón de Shadcn de forma nativa, evitando duplicar etiquetas <button> */}
+                      <ComboboxTrigger className="inline-flex items-center justify-center whitespace-nowrap rounded-md font-medium transition-colors border border-input bg-background shadow-xs hover:bg-accent hover:text-accent-foreground h-9 px-3 gap-1.5 text-xs focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50">
+                        <Plus className="h-3.5 w-3.5 shrink-0" />
+                        Agregar Producto
+                      </ComboboxTrigger>
+
+                      {/* Contenedor del desplegable */}
+                      <ComboboxContent align="end" className="w-80">
+                        {/* Input de búsqueda interno del Combobox */}
+                        <ComboboxInput
+                          placeholder="Buscar por nombre o código..."
+                          value={productSearch}
+                          onChange={(e) => setProductSearch(e.target.value)}
+                          className="m-1 h-8 text-sm"
+                          autoFocus
+                          showTrigger={false} // Ocultamos la flecha interna para un look limpio tipo popover
+                        />
+
+                        <ComboboxList>
+                          {/* Estado de Carga */}
+                          {productsLoading ? (
+                            <div className="flex items-center justify-center py-4">
+                              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                            </div>
+                          ) : (
+                            /* Mapeo de Productos Activos */
+                            activeProducts.map((product) => {
+                              const clientPrice = selectedClientId
+                                ? clientPrices.find((cp: any) => cp.productId === product.id)
+                                : null;
+                              const effectivePrice = clientPrice ? clientPrice.customPrice : product.salePrice;
+                              const inList = lineItems.find((l) => l.productId === product.id);
+
+                              return (
+                                <ComboboxItem
+                                  key={product.id}
+                                  value={product.id}
+                                  onClick={() => addProduct(product)}
+                                  className={`flex items-center px-2 py-1.5 text-sm rounded-sm cursor-pointer hover:bg-accent hover:text-accent-foreground ${inList ? 'bg-emerald-50 dark:bg-emerald-900/20' : ''
                                     }`}
-                                  >
-                                    <div className="flex-1 min-w-0">
-                                      <div className="flex items-center gap-1">
-                                        <span className="truncate font-medium">{product.name}</span>
-                                        {clientPrice && (
-                                          <Badge className="bg-amber-100 text-amber-800 text-[10px] px-1 py-0 border border-amber-300">★</Badge>
-                                        )}
-                                        {inList && (
-                                          <Badge className="bg-emerald-100 text-emerald-800 text-[10px] px-1 py-0">✓</Badge>
-                                        )}
-                                      </div>
-                                      <span className="text-xs text-muted-foreground">{product.code} · Stock: {product.quantity} {UNIT_ABBREV[product.unitOfMeasure] || 'Und'}</span>
+                                >
+                                  {/* Información del Producto */}
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-1">
+                                      <span className="truncate font-medium">{product.name}</span>
+                                      {clientPrice && (
+                                        <Badge className="bg-amber-100 text-amber-800 text-[10px] px-1 py-0 border border-amber-300">
+                                          ★
+                                        </Badge>
+                                      )}
+                                      {inList && (
+                                        <Badge className="bg-emerald-100 text-emerald-800 text-[10px] px-1 py-0">
+                                          ✓
+                                        </Badge>
+                                      )}
                                     </div>
-                                    <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 ml-2">
-                                      {formatCurrency(effectivePrice)}
+                                    <span className="text-xs text-muted-foreground block truncate">
+                                      {product.code} · Stock: {product.quantity} {UNIT_ABBREV[product.unitOfMeasure] || 'Und'}
                                     </span>
                                   </div>
-                                )
-                              })
-                            )}
-                          </div>
-                        </ScrollArea>
-                      </PopoverContent>
-                    </Popover>
+
+                                  {/* Precio */}
+                                  <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 ml-2 whitespace-nowrap">
+                                    {formatCurrency(effectivePrice)}
+                                  </span>
+                                </ComboboxItem>
+                              );
+                            })
+                          )}
+
+                          {/* Manejo automático de lista vacía por CSS de Base UI */}
+                          <ComboboxEmpty>No se encontraron productos</ComboboxEmpty>
+                        </ComboboxList>
+                      </ComboboxContent>
+                    </Combobox>
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -935,7 +990,8 @@ export function InvoicingView() {
             </div>
           </div>
         </div>
-      ) : null}
+      ) : null
+      }
 
       {/* Invoice Detail Dialog */}
       <Dialog open={invoiceDialogOpen} onOpenChange={setInvoiceDialogOpen}>
@@ -1116,7 +1172,7 @@ export function InvoicingView() {
           )}
         </DialogContent>
       </Dialog>
-    </div>
+    </div >
   )
 }
 

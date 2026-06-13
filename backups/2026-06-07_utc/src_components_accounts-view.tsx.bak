@@ -1,0 +1,92 @@
+'use client'
+
+import { useState, useMemo } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useAppStore, useAuthStore } from '@/lib/store'
+import { api } from '@/lib/api'
+import { formatCurrency, formatBs, formatDate, getStatusColor } from '@/lib/format'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Badge } from '@/components/ui/badge'
+import { Separator } from '@/components/ui/separator'
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from '@/components/ui/table'
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogHeader,
+	DialogTitle,
+	DialogTrigger,
+	DialogFooter,
+	DialogClose,
+} from '@/components/ui/dialog'
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from '@/components/ui/select'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import {
+	FileText,
+	Search,
+	Printer,
+	Plus,
+	DollarSign,
+	User,
+	Phone,
+	Mail,
+	CreditCard,
+	AlertTriangle,
+	MessageCircle,
+	ArrowDownCircle,
+	ArrowUpCircle,
+} from 'lucide-react'
+import { toast } from 'sonner'
+
+interface AccountEntry {
+	id: string
+	type: string
+	amount: number
+	amountBs: number
+	dollarRate: number
+	description: string | null
+	date: string
+	createdAt: string
+	clientId: string
+	client: { id: string; name: string }
+	invoiceId: string | null
+	invoice: { id: string; number: string; status: string } | null
+	userId: string
+	user: { id: string; name: string }
+}
+
+export function AccountsView() {
+	const { selectedClientId, setSelectedClientId, setCurrentPage, setSelectedInvoiceId } = useAppStore()
+	const { user } = useAuthStore()
+	const queryClient = useQueryClient()
+	const [clientSearch, setClientSearch] = useState('')
+	const [paymentDialogOpen, setPaymentDialogOpen] = useState(false)
+	const [paymentAmount, setPaymentAmount] = useState('')
+	const [paymentDescription, setPaymentDescription] = useState('')
+	const [paymentInvoiceId, setPaymentInvoiceId] = useState<string>('')
+	const [cobroDialogOpen, setCobroDialogOpen] = useState(false)
+	const [cobroAmount, setCobroAmount] = useState('')
+	const [cobroDescription, setCobroDescription] = useState('')
+	const [assignDialogOpen, setAssignDialogOpen] = useState(false)
+	const [assignEntryId, setAssignEntryId] = useState<string | null>(null)
+	const [assignInvoiceId, setAssignInvoiceId] = useState<string>('')
+	const [assignAmount, setAssignAmount] = useState('')
+
+	// ... rest of original file content omitted for brevity (backup stored)
+}

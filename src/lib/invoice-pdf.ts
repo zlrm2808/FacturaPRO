@@ -362,7 +362,8 @@ export function generateInvoiceDocumentPDF(company: CompanyConfig, data: Invoice
 
   // IVA
   doc.setTextColor(80, 80, 80)
-  doc.text('IVA (16%):', totalsBoxX, yPos)
+  const companyTaxLabel = `IVA (${(company.taxRate ?? 16).toString()}%):`
+  doc.text(companyTaxLabel, totalsBoxX, yPos)
   doc.setTextColor(30, 30, 30)
   doc.text(formatCurrencyPDF(data.invoice.tax), totalsBoxX + totalsBoxW, yPos, { align: 'right' })
   yPos += 5

@@ -69,6 +69,8 @@ interface OverdueInvoice {
   paymentMethod: string
   clientId: string
   daysOverdue: number
+  isOverdue: boolean
+  effectiveStatus: string
   client: {
     id: string
     name: string
@@ -146,6 +148,10 @@ export function OverdueView() {
     queryKey: ['overdue-invoices'],
     queryFn: () => api.get('/invoices/overdue'),
   })
+
+  const showAllClientInvoices = () => {
+    setExpandedClients(new Set(clients.map((c) => c.client.id)))
+  }
 
   // Mark as VENCIDA mutation
   const markAsVencidaMutation = useMutation({
@@ -238,12 +244,12 @@ export function OverdueView() {
     })
   }
 
-  const getStatusBadge = (status: string, daysOverdue: number) => {
-    if (status === 'VENCIDA') {
+  const getStatusBadge = (invoice: OverdueInvoice) => {
+    if (invoice.status === 'VENCIDA') {
       return <Badge className="bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">VENCIDA</Badge>
     }
-    if (status === 'PENDIENTE' && daysOverdue > 30) {
-      return <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">PENDIENTE ({daysOverdue}d)</Badge>
+    if (invoice.status === 'PENDIENTE' && invoice.daysOverdue > 0) {
+      return <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">PENDIENTE ({invoice.daysOverdue}d)</Badge>
     }
     return <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">PENDIENTE</Badge>
   }
@@ -336,7 +342,7 @@ export function OverdueView() {
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="cursor-pointer hover:shadow-lg transition-shadow" onClick={showAllClientInvoices}>
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
               <div className="flex size-10 items-center justify-center rounded-lg bg-orange-100 dark:bg-orange-900/30">
@@ -347,6 +353,7 @@ export function OverdueView() {
                 <p className="text-xl font-bold text-orange-600 dark:text-orange-400">
                   {summary.totalClientsWithDebt}
                 </p>
+                <p className="text-xs text-muted-foreground">Haz clic para ver clientes e invoices</p>
               </div>
             </div>
           </CardContent>
@@ -506,10 +513,10 @@ export function OverdueView() {
                                     <TableCell className="text-right text-sm">
                                       {invoice.totalBs ? formatBs(invoice.totalBs) : '—'}
                                     </TableCell>
-                                    <TableCell>{getStatusBadge(invoice.status, days)}</TableCell>
+                                    <TableCell>{getStatusBadge(invoice)}</TableCell>
                                     <TableCell className="text-right">
-                                      <span className="text-sm font-medium text-red-600 dark:text-red-400">
-                                        {days}
+                                      <span className={`text-sm font-medium ${invoice.isOverdue ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'}`}>
+                                        {invoice.daysOverdue}
                                       </span>
                                     </TableCell>
                                     <TableCell className="text-right">

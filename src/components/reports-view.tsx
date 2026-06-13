@@ -64,6 +64,7 @@ const REPORT_TYPES = [
   { id: 'ventas', label: 'Ventas', icon: DollarSign },
   { id: 'inventario', label: 'Inventario', icon: Package },
   { id: 'clientes', label: 'Clientes', icon: Users },
+  { id: 'estado-cuenta', label: 'Estado de Cuenta', icon: FileText },
   { id: 'facturas-vencidas', label: 'Facturas Vencidas', icon: AlertTriangle },
   { id: 'pagos', label: 'Pagos', icon: FileText },
   { id: 'productos-vendidos', label: 'Productos Vendidos', icon: ShoppingCart },
@@ -82,6 +83,9 @@ export function ReportsView() {
   const [reportType, setReportType] = useState<ReportType>('ventas')
   const [fromDate, setFromDate] = useState(thirtyDaysAgo)
   const [toDate, setToDate] = useState(today)
+
+  // Estado de cuenta specific options
+  const [showZeroBalanceClients, setShowZeroBalanceClients] = useState(false)
 
   // Price list specific options
   const [priceCurrency, setPriceCurrency] = useState<'usd' | 'both'>('usd')
@@ -108,6 +112,9 @@ export function ReportsView() {
 
   const buildReportUrl = () => {
     let url = `/reports?type=${reportType}&fromDate=${fromDate}&toDate=${toDate}`
+    if (reportType === 'estado-cuenta') {
+      url += `&includeZeroBalance=${showZeroBalanceClients}`
+    }
     if (reportType === 'lista-precios') {
       url += `&currency=${priceCurrency}`
       if (priceCategory) {
@@ -121,7 +128,7 @@ export function ReportsView() {
   }
 
   const { data: report, isLoading } = useQuery({
-    queryKey: ['reports', reportType, fromDate, toDate, priceCurrency, priceCategory, priceClientId],
+    queryKey: ['reports', reportType, fromDate, toDate, showZeroBalanceClients, priceCurrency, priceCategory, priceClientId],
     queryFn: () => api.get(buildReportUrl()),
     enabled: !!reportType,
   })
@@ -193,6 +200,49 @@ export function ReportsView() {
           { label: 'Balance Pendiente', value: `$${(report.totalBalanceOutstanding as number).toFixed(2)}` },
         ]
         break
+      case 'estado-cuenta': {
+        title = 'Reporte de Estado de Cuenta'
+        headers = ['Nombre', 'Balance USD', 'Facturas', 'Transacciones', 'Movimientos']
+        rows = (report.clients || []).map((c: Record<string, unknown>) => [
+          c.name as string,
+          (c.balance as number).toFixed(2),
+          c.invoiceCount as number,
+          c.transactionCount as number,
+          c.accountEntryCount as number,
+        ])
+
+        const totalBalance = (report.clients || []).reduce(
+          (sum: number, c: Record<string, unknown>) => sum + (c.balance as number || 0),
+          0
+        )
+        const totalInvoices = (report.clients || []).reduce(
+          (sum: number, c: Record<string, unknown>) => sum + (c.invoiceCount as number || 0),
+          0
+        )
+        const totalTransactions = (report.clients || []).reduce(
+          (sum: number, c: Record<string, unknown>) => sum + (c.transactionCount as number || 0),
+          0
+        )
+        const totalMovements = (report.clients || []).reduce(
+          (sum: number, c: Record<string, unknown>) => sum + (c.accountEntryCount as number || 0),
+          0
+        )
+
+        rows.push([
+          'Totales',
+          totalBalance.toFixed(2),
+          totalInvoices,
+          totalTransactions,
+          totalMovements,
+        ])
+
+        summaryCards = [
+          { label: 'Clientes con movimiento', value: String(report.totalMovementClients) },
+          { label: 'Clientes con saldo distinto de 0', value: String(report.clientsWithBalanceCount) },
+          { label: 'Balance total', value: `$${totalBalance.toFixed(2)}` },
+        ]
+        break
+      }
       case 'facturas-vencidas':
         title = 'Reporte de Facturas Vencidas'
         headers = ['Número', 'Fecha', 'Cliente', 'Total USD']
@@ -355,6 +405,42 @@ export function ReportsView() {
           Balance: c.balance,
           Facturas: c.invoiceCount,
         }))
+      case 'estado-cuenta': {
+        const clients = report.clients || []
+        const totalBalance = clients.reduce(
+          (sum: number, c: Record<string, unknown>) => sum + (c.balance as number || 0),
+          0
+        )
+        const totalInvoices = clients.reduce(
+          (sum: number, c: Record<string, unknown>) => sum + (c.invoiceCount as number || 0),
+          0
+        )
+        const totalTransactions = clients.reduce(
+          (sum: number, c: Record<string, unknown>) => sum + (c.transactionCount as number || 0),
+          0
+        )
+        const totalMovements = clients.reduce(
+          (sum: number, c: Record<string, unknown>) => sum + (c.accountEntryCount as number || 0),
+          0
+        )
+
+        return [
+          ...clients.map((c: Record<string, unknown>) => ({
+            Nombre: c.name,
+            Balance: c.balance,
+            Facturas: c.invoiceCount,
+            Transacciones: c.transactionCount,
+            Movimientos: c.accountEntryCount,
+          })),
+          {
+            Nombre: 'Totales',
+            Balance: totalBalance,
+            Facturas: totalInvoices,
+            Transacciones: totalTransactions,
+            Movimientos: totalMovements,
+          },
+        ]
+      }
       case 'facturas-vencidas':
         return (report.invoices || []).map((inv: Record<string, unknown>) => ({
           Numero: inv.number,
@@ -436,6 +522,14 @@ export function ReportsView() {
             <SummaryCard title="Total Clientes" value={report.totalClients} icon={Users} />
             <SummaryCard title="Con Balance" value={report.clientsWithBalanceCount} icon={AlertTriangle} />
             <SummaryCard title="Balance Pendiente" value={formatCurrency(report.totalBalanceOutstanding)} icon={DollarSign} />
+          </div>
+        )
+      case 'estado-cuenta':
+        return (
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            <SummaryCard title="Clientes con movimiento" value={report.totalMovementClients} icon={Users} />
+            <SummaryCard title="Con saldo distinto de 0" value={report.clientsWithBalanceCount} icon={AlertTriangle} />
+            <SummaryCard title="Balance total" value={formatCurrency(report.totalBalanceOutstanding)} icon={DollarSign} />
           </div>
         )
       case 'facturas-vencidas':
@@ -761,6 +855,40 @@ export function ReportsView() {
             </CardContent>
           </Card>
         )
+      case 'estado-cuenta':
+        return (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Clientes con Movimiento</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <ScrollArea className="max-h-96">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Nombre</TableHead>
+                      <TableHead className="text-right">Balance</TableHead>
+                      <TableHead className="text-right">Facturas</TableHead>
+                      <TableHead className="text-right">Transacciones</TableHead>
+                      <TableHead className="text-right">Movimientos</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(report.clients || []).map((c: Record<string, unknown>) => (
+                      <TableRow key={c.id as string}>
+                        <TableCell className="font-medium">{c.name as string}</TableCell>
+                        <TableCell className={`text-right ${(c.balance as number) > 0 ? 'text-emerald-600' : (c.balance as number) < 0 ? 'text-red-600' : 'text-foreground'}`}>{formatCurrency(c.balance as number)}</TableCell>
+                        <TableCell className="text-right">{c.invoiceCount as number}</TableCell>
+                        <TableCell className="text-right">{c.transactionCount as number}</TableCell>
+                        <TableCell className="text-right">{c.accountEntryCount as number}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </ScrollArea>
+            </CardContent>
+          </Card>
+        )
       case 'facturas-vencidas':
         return (
           <Card>
@@ -1025,6 +1153,20 @@ export function ReportsView() {
                 </div>
               </>
             )}
+            {reportType === 'estado-cuenta' && (
+              <div className="flex items-end gap-2">
+                <div className="flex items-center space-x-2 bg-muted/50 px-3 py-2 rounded-lg border">
+                  <Checkbox
+                    id="includeZeroBalance"
+                    checked={showZeroBalanceClients}
+                    onCheckedChange={(checked) => setShowZeroBalanceClients(checked as boolean)}
+                  />
+                  <Label htmlFor="includeZeroBalance" className="text-xs flex items-center gap-1.5 cursor-pointer">
+                    Mostrar clientes con saldo 0 y movimiento
+                  </Label>
+                </div>
+              </div>
+            )}
 
             {/* Price list specific filters */}
             {reportType === 'lista-precios' && (
@@ -1116,8 +1258,8 @@ export function ReportsView() {
                             >
                               <User className="h-3.5 w-3.5 mr-2 shrink-0" />
                               <span className="truncate">{client.name as string}</span>
-                              {client.phone && (
-                                <span className="text-xs text-muted-foreground ml-2 shrink-0">{client.phone as string}</span>
+                              {typeof client.phone === 'string' && (
+                                <span className="text-xs text-muted-foreground ml-2 shrink-0">{client.phone}</span>
                               )}
                             </div>
                           ))}

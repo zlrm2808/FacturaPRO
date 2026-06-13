@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import { useAppStore } from '@/lib/store'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
@@ -152,6 +152,8 @@ export function PosView() {
       const params = new URLSearchParams()
       if (searchTerm) params.set('search', searchTerm)
       if (selectedCategory !== 'all') params.set('category', selectedCategory)
+      // Only fetch available products in POS by default
+      params.set('available', 'true')
       return api.get(`/products?${params.toString()}`)
     },
   })
@@ -212,8 +214,19 @@ export function PosView() {
   })
 
   // Cart calculations
+  // Fetch company to determine tax rate
+  const { data: companyData } = useQuery({ queryKey: ['company'], queryFn: () => api.get('/company') })
+  const companyTaxPercent = companyData?.taxRate ?? 16
+  const companyTaxRate = companyTaxPercent / 100
+
+  useEffect(() => {
+    if (companyData) {
+      setTaxEnabled((companyData.taxRate ?? 16) !== 0)
+    }
+  }, [companyData])
+
   const cartSubtotal = useMemo(() => cart.reduce((sum, item) => sum + item.subtotal, 0), [cart])
-  const cartTax = useMemo(() => taxEnabled ? (cartSubtotal - discount) * 0.16 : 0, [cartSubtotal, discount, taxEnabled])
+  const cartTax = useMemo(() => taxEnabled ? (cartSubtotal - discount) * companyTaxRate : 0, [cartSubtotal, discount, taxEnabled, companyTaxRate])
   const cartTotal = useMemo(() => {
     const taxable = cartSubtotal - discount
     return taxable > 0 ? taxable + cartTax : 0
@@ -682,7 +695,7 @@ export function PosView() {
                         className="scale-75 origin-left"
                       />
                       <Label htmlFor="tax-toggle" className="text-sm text-muted-foreground cursor-pointer">
-                        IVA (16%)
+                        IVA ({companyTaxPercent}%)
                       </Label>
                     </div>
                     <div className="text-right">

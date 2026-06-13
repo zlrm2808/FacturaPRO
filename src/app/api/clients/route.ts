@@ -30,15 +30,39 @@ export async function GET(request: Request) {
         },
         invoices: {
           where: { status: { in: ['PENDIENTE', 'VENCIDA'] } },
-          select: { total: true },
+          select: {
+            total: true,
+            paymentMethod: true,
+            accountEntries: {
+              where: { type: 'ABONO' },
+              select: { amount: true },
+            },
+          },
         },
       },
       orderBy: { createdAt: 'desc' },
     })
 
     const result = clients.map((client) => {
-      const pendingBalance = client.invoices.reduce((sum, inv) => sum + inv.total, 0)
-      const { invoices, ...rest } = client
+      const balanceFromClient = client.balance ?? 0
+
+      const pendingInvoiceBalance = client.invoices.reduce((sum, invoice) => {
+        const paidAmount = invoice.accountEntries.reduce((sub, entry) => sub + entry.amount, 0)
+        const remaining = Math.max(0, invoice.total - paidAmount)
+        return sum + remaining
+      }, 0)
+
+      const pendingNonCreditInvoices = client.invoices.reduce((sum, invoice) => {
+        if (invoice.paymentMethod === 'CREDITO') return sum
+        const paidAmount = invoice.accountEntries.reduce((sub, entry) => sub + entry.amount, 0)
+        const remaining = Math.max(0, invoice.total - paidAmount)
+        return sum + remaining
+      }, 0)
+
+      const missingCreditInvoiceBalance = Math.max(0, pendingInvoiceBalance - pendingNonCreditInvoices - balanceFromClient)
+      const pendingBalance = balanceFromClient + pendingNonCreditInvoices + missingCreditInvoiceBalance
+
+      const { _count, invoices, ...rest } = client
       return {
         ...rest,
         invoiceCount: client._count.invoices,

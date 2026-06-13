@@ -193,6 +193,19 @@ export function generateReportPDF(company: CompanyConfig, report: ReportConfig):
       head = [groupRow, report.headers]
     }
 
+    // Determine which columns are numeric by header keywords
+    const numericRegex = /(total|monto|balance|cantidad|ingresos|precio|facturas|transacciones|movimientos)/i
+    const numericCols = report.headers.map((h) => numericRegex.test(String(h)))
+    const balanceColIndex = report.headers.findIndex((h) => /balance/i.test(String(h)))
+
+    // Build columnStyles to right-align numeric columns
+    const columnStyles: Record<number, any> = {}
+    numericCols.forEach((isNum, idx) => {
+      if (isNum) columnStyles[idx] = { halign: 'right' }
+    })
+
+    const lastBodyRowIndex = report.rows.length - 1
+
     autoTable(doc, {
       head,
       body: report.rows,
@@ -211,9 +224,41 @@ export function generateReportPDF(company: CompanyConfig, report: ReportConfig):
       alternateRowStyles: {
         fillColor: [245, 245, 245],
       },
+      columnStyles,
       willDrawPage: () => {
         if (report.watermark) {
           drawWatermark(doc, pageWidth, pageHeight, company)
+        }
+      },
+      didParseCell: (data: any) => {
+        const { cell, row, column, section } = data
+        if (section === 'body') {
+          // If this is the last row, style as totals
+          if (row.index === lastBodyRowIndex) {
+            // First column: label
+            if (column.index === 0) {
+              // Replace 'Totales' with 'Total' when present
+              cell.text = cell.text.map((t: string) => (t === 'Totales' ? 'Total' : t))
+              cell.styles.fontStyle = 'bold'
+            } else {
+              cell.styles.fontStyle = 'bold'
+              cell.styles.halign = 'right'
+            }
+          } else {
+            // Regular row: right-align numeric columns
+            if (numericCols[column.index]) {
+              cell.styles.halign = 'right'
+            }
+            // Color balance column: positive green, negative red
+            if (column.index === balanceColIndex) {
+              const text = (cell.text || []).join('')
+              const num = parseFloat(String(text).replace(/[^0-9.-]/g, ''))
+              if (!isNaN(num)) {
+                if (num > 0) cell.styles.textColor = [16, 185, 129]
+                else if (num < 0) cell.styles.textColor = [239, 68, 68]
+              }
+            }
+          }
         }
       },
       didDrawPage: () => {

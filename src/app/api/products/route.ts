@@ -14,6 +14,7 @@ export async function GET(request: Request) {
     const search = searchParams.get('search') || ''
     const category = searchParams.get('category') || ''
     const lowStock = searchParams.get('lowStock') === 'true'
+    const availableOnly = searchParams.get('available') === 'true'
 
     const where: Record<string, unknown> = {}
 
@@ -33,6 +34,9 @@ export async function GET(request: Request) {
       where.quantity = { lte: db.product.fields.minStock ? undefined : 0 }
       // SQLite: use raw filter approach
       // We'll filter after fetch for the lte comparison between two fields
+    }
+    if (availableOnly) {
+      where.quantity = { gt: 0 }
     }
 
     let products

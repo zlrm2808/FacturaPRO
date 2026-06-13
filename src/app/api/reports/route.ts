@@ -2,6 +2,24 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getUserFromRequest } from '@/lib/auth'
 
+function createDateRangeFilter(fromDate?: string | null, toDate?: string | null) {
+  const dateFilter: Record<string, unknown> = {}
+
+  if (fromDate) {
+    const start = new Date(fromDate)
+    start.setHours(0, 0, 0, 0)
+    dateFilter.gte = start
+  }
+
+  if (toDate) {
+    const end = new Date(toDate)
+    end.setHours(23, 59, 59, 999)
+    dateFilter.lte = end
+  }
+
+  return Object.keys(dateFilter).length ? dateFilter : undefined
+}
+
 export async function GET(request: Request) {
   try {
     const payload = getUserFromRequest(request)
@@ -25,19 +43,9 @@ export async function GET(request: Request) {
     }
 
     const dateFilter: Record<string, unknown> = {}
-    if (fromDate || toDate) {
-      dateFilter.date = {
-        ...(fromDate && { gte: new Date(fromDate) }),
-        ...(toDate && { lte: new Date(toDate) }),
-      }
-    }
-
-    const createdAtFilter: Record<string, unknown> = {}
-    if (fromDate || toDate) {
-      createdAtFilter.createdAt = {
-        ...(fromDate && { gte: new Date(fromDate) }),
-        ...(toDate && { lte: new Date(toDate) }),
-      }
+    const rangeFilter = createDateRangeFilter(fromDate, toDate)
+    if (rangeFilter) {
+      dateFilter.date = rangeFilter
     }
 
     switch (type) {
@@ -47,8 +55,10 @@ export async function GET(request: Request) {
         return await handleInventarioReport()
       case 'clientes':
         return await handleClientesReport()
+      case 'estado-cuenta':
+        return await handleEstadoCuentaReport(searchParams)
       case 'facturas-vencidas':
-        return await handleFacturasVencidasReport()
+        return await handleFacturasVencidasReport(fromDate, toDate)
       case 'pagos':
         return await handlePagosReport(dateFilter)
       case 'transacciones-usuario':
@@ -209,9 +219,159 @@ async function handleClientesReport() {
   })
 }
 
-async function handleFacturasVencidasReport() {
+async function handleEstadoCuentaReport(searchParams: URLSearchParams) {
+  const includeZeroBalance = searchParams.get('includeZeroBalance') === 'true'
+  const fromDate = searchParams.get('fromDate')
+  const toDate = searchParams.get('toDate')
+  const rangeFilter = createDateRangeFilter(fromDate, toDate)
+
+  const invoiceWhere: Record<string, unknown> = {
+    status: { not: 'ANULADA' },
+  }
+
+  const movementFilter = {
+    OR: [
+      { invoices: { some: { ...invoiceWhere, ...(rangeFilter ? { date: rangeFilter } : {}) } } },
+      { transactions: { some: { ...(rangeFilter ? { date: rangeFilter } : {}) } } },
+      { accountEntries: { some: { ...(rangeFilter ? { date: rangeFilter } : {}) } } },
+    ],
+  }
+
+  const clientIds = rangeFilter
+    ? (await db.client.findMany({
+        where: movementFilter,
+        select: { id: true },
+      })).map((client) => client.id)
+    : []
+
+  const clientWhere = rangeFilter
+    ? clientIds.length > 0
+      ? { id: { in: clientIds } }
+      : { id: { in: [] } }
+    : movementFilter
+
+  const clients = await db.client.findMany({
+    where: clientWhere,
+    include: {
+      invoices: {
+        where: invoiceWhere,
+        select: {
+          total: true,
+          paymentMethod: true,
+          accountEntries: {
+            where: { type: 'ABONO' },
+            select: { amount: true },
+          },
+        },
+      },
+      accountEntries: { select: { type: true, amount: true } },
+      _count: { select: { invoices: true, transactions: true, accountEntries: true } },
+    },
+    orderBy: { name: 'asc' },
+  })
+
+  const invoiceCountMap = new Map<string, number>()
+  const transactionCountMap = new Map<string, number>()
+  const accountEntryCountMap = new Map<string, number>()
+
+  if (rangeFilter && clientIds.length) {
+    const invoicesInRange = await db.invoice.findMany({
+      where: {
+        clientId: { in: clientIds },
+        ...invoiceWhere,
+        date: rangeFilter,
+      },
+      select: { clientId: true },
+    })
+    invoicesInRange.forEach((invoice) => {
+      invoiceCountMap.set(invoice.clientId, (invoiceCountMap.get(invoice.clientId) || 0) + 1)
+    })
+
+    const transactionsInRange = await db.transaction.findMany({
+      where: {
+        clientId: { in: clientIds },
+        date: rangeFilter,
+      },
+      select: { clientId: true },
+    })
+    transactionsInRange.forEach((transaction) => {
+      transactionCountMap.set(transaction.clientId, (transactionCountMap.get(transaction.clientId) || 0) + 1)
+    })
+
+    const accountEntriesInRange = await db.accountEntry.findMany({
+      where: {
+        clientId: { in: clientIds },
+        date: rangeFilter,
+      },
+      select: { clientId: true },
+    })
+    accountEntriesInRange.forEach((entry) => {
+      accountEntryCountMap.set(entry.clientId, (accountEntryCountMap.get(entry.clientId) || 0) + 1)
+    })
+  }
+
+  const clientsWithComputedBalance = clients.map((c) => {
+    const balanceFromClient = c.balance ?? 0
+    const pendingInvoiceBalance = c.invoices.reduce((sum, invoice) => {
+      const paidAmount = invoice.accountEntries.reduce((sub, entry) => sub + entry.amount, 0)
+      const remaining = Math.max(0, invoice.total - paidAmount)
+      return sum + remaining
+    }, 0)
+
+    const pendingNonCreditInvoices = c.invoices.reduce((sum, invoice) => {
+      if (invoice.paymentMethod === 'CREDITO') return sum
+      const paidAmount = invoice.accountEntries.reduce((sub, entry) => sub + entry.amount, 0)
+      const remaining = Math.max(0, invoice.total - paidAmount)
+      return sum + remaining
+    }, 0)
+
+    const missingCreditInvoiceBalance = Math.max(0, pendingInvoiceBalance - pendingNonCreditInvoices - balanceFromClient)
+    const computedBalance = balanceFromClient + pendingNonCreditInvoices + missingCreditInvoiceBalance
+
+    return {
+      ...c,
+      computedBalance,
+      invoiceCount: rangeFilter ? invoiceCountMap.get(c.id) || 0 : c._count.invoices,
+      transactionCount: rangeFilter ? transactionCountMap.get(c.id) || 0 : c._count.transactions,
+      accountEntryCount: rangeFilter ? accountEntryCountMap.get(c.id) || 0 : c._count.accountEntries,
+    }
+  })
+
+  const filteredClients = includeZeroBalance
+    ? clientsWithComputedBalance
+    : clientsWithComputedBalance.filter((c) => c.computedBalance !== 0)
+
+  const clientsWithBalance = filteredClients.filter((c) => c.computedBalance !== 0)
+  const totalBalanceOutstanding = filteredClients.reduce(
+    (sum, c) => sum + c.computedBalance,
+    0
+  )
+
+  return NextResponse.json({
+    type: 'estado-cuenta',
+    totalMovementClients: filteredClients.length,
+    clientsWithBalanceCount: clientsWithBalance.length,
+    totalBalanceOutstanding,
+    clients: filteredClients.map((c) => ({
+      id: c.id,
+      name: c.name,
+      balance: c.computedBalance,
+      invoiceCount: c.invoiceCount,
+      transactionCount: c.transactionCount,
+      accountEntryCount: c.accountEntryCount,
+    })),
+  })
+}
+
+async function handleFacturasVencidasReport(fromDate?: string | null, toDate?: string | null) {
+  const overdueFilter: Record<string, unknown> = { status: 'VENCIDA' }
+  const dateFilter = createDateRangeFilter(fromDate, toDate)
+
   const overdueInvoices = await db.invoice.findMany({
-    where: { status: 'VENCIDA' },
+    where: {
+      ...overdueFilter,
+      ...(dateFilter ? { date: dateFilter } : {}),
+    },
     include: {
       client: { select: { id: true, name: true } },
       user: { select: { id: true, name: true } },

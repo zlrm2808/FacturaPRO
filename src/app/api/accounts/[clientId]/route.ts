@@ -38,13 +38,44 @@ export async function GET(
       orderBy: { date: 'desc' },
     })
 
-    // Get pending invoices
-    const pendingInvoices = await db.invoice.findMany({
-      where: {
-        clientId,
-        status: { in: ['PENDIENTE', 'VENCIDA'] },
+    // Get all invoices for this client (with their ABONO entries to compute paid/remaining)
+    const allInvoices = await db.invoice.findMany({
+      where: { clientId },
+      include: {
+        accountEntries: {
+          where: { type: 'ABONO' },
+          select: { amount: true },
+        },
       },
       orderBy: { date: 'desc' },
+    })
+
+    const invoicesWithBalances = allInvoices.map((inv) => {
+      // For annulled invoices, report all amounts as zero and ignore abonos
+      if (inv.status === 'ANULADA') {
+        return {
+          id: inv.id,
+          number: inv.number,
+          date: inv.date,
+          status: inv.status,
+          total: 0,
+          paidAmount: 0,
+          remainingAmount: 0,
+        }
+      }
+
+      const paidAmount = inv.accountEntries.reduce((sum, entry) => sum + entry.amount, 0)
+      const remainingAmount = Math.max(0, inv.total - paidAmount)
+      return {
+        id: inv.id,
+        number: inv.number,
+        date: inv.date,
+        status: inv.status,
+        paymentMethod: inv.paymentMethod,
+        total: inv.total,
+        paidAmount,
+        remainingAmount,
+      }
     })
 
     // Calculate totals
@@ -58,10 +89,22 @@ export async function GET(
       .filter((e) => e.type === 'ABONO')
       .reduce((sum, e) => sum + e.amount, 0)
 
-    const pendingInvoicesTotal = pendingInvoices.reduce(
-      (sum, inv) => sum + inv.total,
-      0
-    )
+    const pendingInvoicesTotal = invoicesWithBalances
+      .filter((i) => i.status === 'PENDIENTE' || i.status === 'VENCIDA')
+      .reduce((sum, inv) => sum + inv.remainingAmount, 0)
+
+    const pendingNonCreditInvoicesTotal = invoicesWithBalances
+      .filter((i) => i.status === 'PENDIENTE' || i.status === 'VENCIDA')
+      .filter((i) => i.paymentMethod !== 'CREDITO')
+      .reduce((sum, inv) => sum + inv.remainingAmount, 0)
+
+    const balanceFromClient = client.balance ?? 0
+    const missingCreditInvoiceBalance = Math.max(0, pendingInvoicesTotal - pendingNonCreditInvoicesTotal - balanceFromClient)
+    const currentBalance = balanceFromClient + pendingNonCreditInvoicesTotal + missingCreditInvoiceBalance
+
+    const totalInvoicesAmount = invoicesWithBalances.reduce((sum, inv) => sum + (inv.total || 0), 0)
+    const totalInvoicesPaid = invoicesWithBalances.reduce((sum, inv) => sum + (inv.paidAmount || 0), 0)
+    const totalInvoicesRemaining = invoicesWithBalances.reduce((sum, inv) => sum + (inv.remainingAmount || 0), 0)
 
     return NextResponse.json({
       client: {
@@ -75,14 +118,17 @@ export async function GET(
       },
       entries,
       summary: {
-        currentBalance: client.balance,
+        currentBalance,
         totalCreditos,
         totalDebitos,
         totalAbonos,
-        pendingInvoicesCount: pendingInvoices.length,
+        pendingInvoicesCount: invoicesWithBalances.filter((i) => i.status === 'PENDIENTE' || i.status === 'VENCIDA').length,
         pendingInvoicesTotal,
+        totalInvoicesAmount,
+        totalInvoicesPaid,
+        totalInvoicesRemaining,
       },
-      pendingInvoices,
+      invoices: invoicesWithBalances,
     })
   } catch (error) {
     console.error('Account statement GET error:', error)

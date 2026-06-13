@@ -40,17 +40,23 @@ export async function GET(request: Request) {
     })
 
     const now = new Date()
-    const overdueInvoices = allPendingOrOverdue.filter((invoice) => {
-      if (invoice.status === 'VENCIDA') return true
-      if (invoice.status === 'PENDIENTE' && invoice.paymentMethod === 'CREDITO') {
-        const dueDate = new Date(invoice.date)
-        dueDate.setDate(dueDate.getDate() + (invoice.creditDays || 0))
-        return dueDate <= now
+    const invoicesToShow = allPendingOrOverdue.map((invoice) => {
+      const isNonCreditPending = invoice.status === 'PENDIENTE' && invoice.paymentMethod !== 'CREDITO'
+      const dueDate = new Date(invoice.date)
+      dueDate.setDate(dueDate.getDate() + (invoice.creditDays || 0))
+      const isCreditOverdue = invoice.status === 'PENDIENTE' && invoice.paymentMethod === 'CREDITO' && dueDate <= now
+      const isOverdue = invoice.status === 'VENCIDA' || isNonCreditPending || isCreditOverdue
+      const effectiveStatus = isOverdue ? 'VENCIDA' : 'PENDIENTE'
+      const daysOverdue = calcDaysOverdue(invoice.date, invoice.creditDays || 0)
+
+      return {
+        invoice,
+        isOverdue,
+        effectiveStatus,
+        daysOverdue,
       }
-      return false
     })
 
-    // Group invoices by client and calculate days overdue
     const clientMap = new Map<string, {
       client: { id: string; name: string; phone: string | null; email: string | null; balance: number }
       invoices: any[]
@@ -58,7 +64,8 @@ export async function GET(request: Request) {
       totalBalanceBs: number
     }>()
 
-    for (const invoice of overdueInvoices) {
+    for (const item of invoicesToShow) {
+      const invoice = item.invoice
       const clientId = invoice.clientId || 'SIN_CLIENTE'
       const clientInfo = invoice.client || { id: 'SIN_CLIENTE', name: 'Sin Cliente', phone: null, email: null, balance: 0 }
 
@@ -72,7 +79,6 @@ export async function GET(request: Request) {
       }
 
       const group = clientMap.get(clientId)!
-      const daysOverdue = calcDaysOverdue(invoice.date, invoice.creditDays || 0)
       group.invoices.push({
         id: invoice.id,
         number: invoice.number,
@@ -86,7 +92,9 @@ export async function GET(request: Request) {
         status: invoice.status,
         paymentMethod: invoice.paymentMethod,
         clientId: invoice.clientId,
-        daysOverdue,
+        daysOverdue: item.daysOverdue,
+        isOverdue: item.isOverdue,
+        effectiveStatus: item.effectiveStatus,
       })
       group.totalBalance += invoice.total
       group.totalBalanceBs += invoice.totalBs
@@ -96,9 +104,10 @@ export async function GET(request: Request) {
     const clients = Array.from(clientMap.values())
 
     // Build summary
+    const overdueAmounts = clients.flatMap((group) => group.invoices.filter((inv) => inv.isOverdue))
     const summary = {
-      totalOverdueAmount: clients.reduce((sum, c) => sum + c.totalBalance, 0),
-      totalOverdueAmountBs: clients.reduce((sum, c) => sum + c.totalBalanceBs, 0),
+      totalOverdueAmount: overdueAmounts.reduce((sum, invoice) => sum + invoice.total, 0),
+      totalOverdueAmountBs: overdueAmounts.reduce((sum, invoice) => sum + invoice.totalBs, 0),
       totalInvoiceCount: clients.reduce((sum, c) => sum + c.invoices.length, 0),
       totalClientsWithDebt: clients.length,
     }

@@ -55,7 +55,9 @@ export async function GET(request: Request) {
 
     const result = invoices.map((inv) => ({
       ...inv,
-      itemCount: inv._count.items,
+      total: inv.status === 'ANULADA' ? 0 : inv.total,
+      totalBs: inv.status === 'ANULADA' ? 0 : inv.totalBs,
+      itemCount: inv.status === 'ANULADA' ? 0 : inv._count.items,
     }))
 
     return NextResponse.json({
@@ -82,7 +84,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const { clientId, items, paymentMethod, discount, notes, creditDays } = body
+    const { clientId, items, paymentMethod, discount, notes, creditDays, taxEnabled } = body
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return NextResponse.json({ error: 'La factura debe tener al menos un item' }, { status: 400 })
@@ -127,7 +129,13 @@ export async function POST(request: Request) {
     })
 
     const invoiceDiscount = discount || 0
-    const taxRate = 0.16
+
+    // Determine tax rate: prefer explicit client flag `taxEnabled === false` to disable tax,
+    // otherwise use company configuration taxRate (%) if present.
+    const companyConfig = await db.companyConfig.findFirst()
+    const companyTaxPercent = (companyConfig?.taxRate ?? 16)
+    const defaultTaxRate = companyTaxPercent / 100
+    const taxRate = taxEnabled === false ? 0 : defaultTaxRate
     const taxableAmount = subtotal - invoiceDiscount
     const tax = taxableAmount * taxRate
     const total = taxableAmount + tax

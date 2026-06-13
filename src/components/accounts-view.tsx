@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAppStore, useAuthStore } from '@/lib/store'
 import { api } from '@/lib/api'
@@ -71,25 +71,45 @@ interface AccountEntry {
   user: { id: string; name: string }
 }
 
+interface ClientSummary {
+  id: string
+  name: string
+  phone: string | null
+  email: string | null
+  rncCedula: string | null
+  invoiceCount: number
+  pendingBalance: number
+}
+
 export function AccountsView() {
-  const { selectedClientId, setSelectedClientId, setCurrentPage } = useAppStore()
+  const { selectedClientId, setSelectedClientId, setCurrentPage, setSelectedInvoiceId } = useAppStore()
   const { user } = useAuthStore()
   const queryClient = useQueryClient()
   const [clientSearch, setClientSearch] = useState('')
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false)
   const [paymentAmount, setPaymentAmount] = useState('')
+  const clientSearchQuery = clientSearch.trim()
+
+  const { data: clients = [] } = useQuery<ClientSummary[]>({
+    queryKey: ['clients-search', clientSearchQuery],
+    queryFn: () => api.get(`/clients?search=${encodeURIComponent(clientSearchQuery)}`),
+  })
+
+  const clientsWithBalance = clients.filter((client) => (client.pendingBalance ?? 0) !== 0)
+  const totalClients = clientsWithBalance.length
+  const totalPendingBalance = clientsWithBalance.reduce((sum, client) => sum + (client.pendingBalance ?? 0), 0)
+  const totalPendingInvoices = clientsWithBalance.reduce((sum, client) => sum + (client.invoiceCount || 0), 0)
   const [paymentDescription, setPaymentDescription] = useState('')
   const [paymentInvoiceId, setPaymentInvoiceId] = useState<string>('')
   const [cobroDialogOpen, setCobroDialogOpen] = useState(false)
   const [cobroAmount, setCobroAmount] = useState('')
   const [cobroDescription, setCobroDescription] = useState('')
+  const [assignDialogOpen, setAssignDialogOpen] = useState(false)
+  const [assignEntryId, setAssignEntryId] = useState<string | null>(null)
+  const [assignInvoiceId, setAssignInvoiceId] = useState<string>('')
+  const [assignAmount, setAssignAmount] = useState('')
 
   // Search clients
-  const { data: clients = [] } = useQuery({
-    queryKey: ['clients-search', clientSearch],
-    queryFn: () => api.get(`/clients?search=${encodeURIComponent(clientSearch)}`),
-    enabled: clientSearch.length > 0,
-  })
 
   // Get account statement for selected client
   const activeClientId = selectedClientId
@@ -110,14 +130,23 @@ export function AccountsView() {
   // Get entries from statement for running balance computation
   const entries = statement?.entries || []
 
-  // Compute running balance for account entries (must be before any early returns)
+  // Compute running balance using account entries only.
+  // Credit entries are amounts owed to us; abonos and débitos reduce the customer's balance.
   const entriesWithBalance = useMemo(() => {
-    return entries.reduce<Array<AccountEntry & { runningBalance: number }>>((acc, entry: AccountEntry) => {
+    return entries.reduce((acc: Array<AccountEntry & { runningBalance: number }>, entry: AccountEntry) => {
       const prevBalance = acc.length > 0 ? acc[acc.length - 1].runningBalance : 0
       const delta = entry.type === 'CREDITO' ? entry.amount : -entry.amount
       return [...acc, { ...entry, runningBalance: prevBalance + delta }]
-    }, [])
+    }, [] as Array<AccountEntry & { runningBalance: number }>)
   }, [entries])
+
+  const computedBalance = useMemo(() => {
+    return entries.reduce((sum, e: AccountEntry) => sum + (e.type === 'CREDITO' ? e.amount : -e.amount), 0)
+  }, [entries])
+
+  const statementBalance = typeof statement?.summary?.currentBalance === 'number'
+    ? statement.summary.currentBalance
+    : computedBalance
 
   // Register payment mutation
   const paymentMutation = useMutation({
@@ -133,6 +162,22 @@ export function AccountsView() {
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Error al registrar pago')
+    },
+  })
+
+  const assignPaymentMutation = useMutation({
+    mutationFn: (data: { entryId: string; invoiceId: string; amount: number }) =>
+      api.post('/accounts/assign', data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['accounts', activeClientId] })
+      setAssignDialogOpen(false)
+      setAssignEntryId(null)
+      setAssignInvoiceId('')
+      setAssignAmount('')
+      toast.success('Abono asignado a factura correctamente')
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Error al asignar abono')
     },
   })
 
@@ -178,6 +223,24 @@ export function AccountsView() {
     })
   }
 
+  const openAssignDialog = (entryId: string, amount: number) => {
+    setAssignEntryId(entryId)
+    setAssignInvoiceId('')
+    setAssignAmount(amount.toString())
+    setAssignDialogOpen(true)
+  }
+
+  const selectedAssignEntry = assignEntryId ? entries.find((entry) => entry.id === assignEntryId) : null
+
+  const handleAssignPayment = () => {
+    if (!activeClientId || !assignEntryId || !assignInvoiceId || !assignAmount) return
+    assignPaymentMutation.mutate({
+      entryId: assignEntryId,
+      invoiceId: assignInvoiceId,
+      amount: parseFloat(assignAmount),
+    })
+  }
+
   const handleWhatsApp = () => {
     const clientData = statement?.client
     if (!clientData?.phone) {
@@ -187,26 +250,74 @@ export function AccountsView() {
     const phone = clientData.phone.replace(/[^0-9]/g, '')
     // Add country code if not present (Venezuela = 58)
     const fullPhone = phone.startsWith('58') ? phone : `58${phone}`
-    const balance = clientData.balance || 0
-    const message = balance > 0
-      ? `Estimado/a ${clientData.name}, le informamos que su balance pendiente es de $${balance.toFixed(2)}. Por favor contactenos para regularizar su cuenta. Gracias.`
+    const displayBalance = typeof statement?.summary?.currentBalance === 'number'
+      ? statement.summary.currentBalance
+      : typeof computedBalance === 'number'
+        ? computedBalance
+        : (clientData.balance || 0)
+    const message = displayBalance > 0
+      ? `Estimado/a ${clientData.name}, le informamos que su balance pendiente es de $${displayBalance.toFixed(2)}. Por favor contactenos para regularizar su cuenta. Gracias.`
       : `Estimado/a ${clientData.name}, su cuenta se encuentra al día. Gracias por su preferencia.`
     window.open(`https://wa.me/${fullPhone}?text=${encodeURIComponent(message)}`, '_blank')
   }
+
+  // If stored client.balance differs from computed, trigger server recompute for this client once
+  useEffect(() => {
+    if (!statement?.client) return
+    const stored = statement.client.balance ?? 0
+    if (Math.abs(stored - computedBalance) > 0.001) {
+      // call recompute endpoint to sync stored balance
+      fetch('/api/accounts/recompute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId: statement.client.id }),
+      })
+        .then(() => {
+          queryClient.invalidateQueries({ queryKey: ['accounts', statement.client.id] })
+          queryClient.invalidateQueries({ queryKey: ['clients'] })
+        })
+        .catch((e) => console.error('Recompute failed', e))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statement?.client, computedBalance])
 
   const handleGeneratePDF = () => {
     window.print()
   }
 
-  // Client not selected - show search
+  // Client not selected - show clients list and totals
   if (!activeClientId) {
     return (
       <div className="p-6 space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
             <h1 className="text-2xl font-bold">Estados de Cuenta</h1>
-            <p className="text-muted-foreground">Seleccione un cliente para ver su estado de cuenta</p>
+            <p className="text-muted-foreground">Lista de clientes y totales de estado de cuenta</p>
           </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-sm text-muted-foreground">Clientes</p>
+              <p className="text-2xl font-bold">{totalClients}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-sm text-muted-foreground">Facturas pendientes</p>
+              <p className="text-2xl font-bold">{totalPendingInvoices}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-sm text-muted-foreground">Saldo pendiente total</p>
+              <p className="text-2xl font-bold text-red-600">{formatCurrency(totalPendingBalance)}</p>
+              {currentDollarRate > 0 && (
+                <p className="text-xs text-muted-foreground">{formatBs(totalPendingBalance * currentDollarRate)}</p>
+              )}
+            </CardContent>
+          </Card>
         </div>
 
         <Card>
@@ -222,37 +333,48 @@ export function AccountsView() {
                 />
               </div>
 
-              {clientSearch.length > 0 && clients.length > 0 && (
-                <ScrollArea className="max-h-96">
-                  <div className="space-y-2">
-                    {clients.map((client: Record<string, unknown>) => (
-                      <button
-                        key={client.id as string}
-                        onClick={() => handleSelectClient(client.id as string)}
-                        className="w-full text-left p-3 rounded-lg border hover:bg-accent transition-colors"
-                      >
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <p className="font-medium">{client.name as string}</p>
-                            <div className="flex gap-4 text-sm text-muted-foreground mt-1">
-                              {client.phone && <span>{client.phone as string}</span>}
-                              {client.email && <span>{client.email as string}</span>}
-                            </div>
-                          </div>
-                          {(client.balance as number) > 0 && (
-                            <Badge variant="destructive" className="text-xs">
-                              {formatCurrency(client.balance as number)}
-                            </Badge>
-                          )}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </ScrollArea>
-              )}
-
-              {clientSearch.length > 0 && clients.length === 0 && (
-                <p className="text-center text-muted-foreground py-4">No se encontraron clientes</p>
+              {clientsWithBalance.length > 0 ? (
+                <div className="rounded-lg border border-border overflow-hidden">
+                  <ScrollArea className="max-h-[560px]">
+                    <table className="min-w-full text-left text-sm">
+                      <thead className="bg-slate-50 dark:bg-slate-900">
+                        <tr>
+                          <th className="px-4 py-3 font-semibold">Cliente</th>
+                          <th className="px-4 py-3 text-right font-semibold">Saldo</th>
+                          <th className="px-4 py-3 text-right font-semibold">Facturas</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {clientsWithBalance.map((client) => (
+                          <tr
+                            key={client.id}
+                            className="border-t border-border hover:bg-accent/50 cursor-pointer"
+                            onClick={() => handleSelectClient(client.id)}
+                          >
+                            <td className="px-4 py-3">
+                              <div className="font-medium">{client.name}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {client.phone || client.email ? (
+                                  <>{client.phone && <span>{client.phone}</span>}{client.phone && client.email ? ' · ' : ''}{client.email && <span>{client.email}</span>}</>
+                                ) : (
+                                  <span className="italic text-muted-foreground">Sin datos de contacto</span>
+                                )}
+                              </div>
+                            </td>
+                            <td className={`px-4 py-3 text-right font-semibold ${client.pendingBalance > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                              {formatCurrency(client.pendingBalance)}
+                            </td>
+                            <td className="px-4 py-3 text-right text-sm text-muted-foreground">
+                              {client.invoiceCount}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </ScrollArea>
+                </div>
+              ) : (
+                <p className="text-center text-muted-foreground py-4">No hay clientes con saldo pendiente</p>
               )}
             </div>
           </CardContent>
@@ -276,7 +398,10 @@ export function AccountsView() {
 
   const client = statement?.client
   const summary = statement?.summary
-  const pendingInvoices = statement?.pendingInvoices || []
+  const invoices = statement?.invoices || []
+  // pending invoices for applying payments
+  const pendingInvoices = (invoices as Record<string, unknown>[]).filter((i) => (i.status === 'PENDIENTE' || i.status === 'VENCIDA'))
+  const selectedInvoiceRemaining = pendingInvoices.find((inv: Record<string, unknown>) => inv.id === assignInvoiceId)?.remainingAmount as number | undefined
 
   return (
     <div className="p-6 space-y-4">
@@ -401,11 +526,14 @@ export function AccountsView() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">Sin factura específica</SelectItem>
-                        {pendingInvoices.map((inv: Record<string, unknown>) => (
-                          <SelectItem key={inv.id as string} value={inv.id as string}>
-                            {inv.number as string} - {formatCurrency(inv.total as number)}
-                          </SelectItem>
-                        ))}
+                        {pendingInvoices.map((inv: Record<string, unknown>) => {
+                          const remaining = typeof inv.remainingAmount === 'number' ? inv.remainingAmount as number : (inv.total as number)
+                          return (
+                            <SelectItem key={inv.id as string} value={inv.id as string}>
+                              {inv.number as string} - {formatCurrency(remaining)}
+                            </SelectItem>
+                          )
+                        })}
                       </SelectContent>
                     </Select>
                   </div>
@@ -421,6 +549,63 @@ export function AccountsView() {
                   className="bg-emerald-600 hover:bg-emerald-700"
                 >
                   {paymentMutation.isPending ? 'Registrando...' : 'Registrar Pago'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Asignar Abono a Factura</DialogTitle>
+                <DialogDescription>Seleccione una factura y un monto para aplicar este abono.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label>Factura</Label>
+                  <Select value={assignInvoiceId} onValueChange={setAssignInvoiceId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar factura..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {pendingInvoices.map((inv: Record<string, unknown>) => {
+                        const remaining = typeof inv.remainingAmount === 'number' ? inv.remainingAmount as number : (inv.total as number)
+                        return (
+                          <SelectItem key={inv.id as string} value={inv.id as string}>
+                            {inv.number as string} - {formatCurrency(remaining)}
+                          </SelectItem>
+                        )
+                      })}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Monto a aplicar (USD)</Label>
+                  <Input
+                    type="number"
+                    placeholder="0.00"
+                    value={assignAmount}
+                    onChange={(e) => setAssignAmount(e.target.value)}
+                    min="0"
+                    step="0.01"
+                    max={selectedInvoiceRemaining?.toString() ?? undefined}
+                  />
+                  {selectedInvoiceRemaining !== undefined && (
+                    <p className="text-xs text-muted-foreground">
+                      Monto máximo disponible en la factura: {formatCurrency(selectedInvoiceRemaining)}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button variant="outline">Cancelar</Button>
+                </DialogClose>
+                <Button
+                  onClick={handleAssignPayment}
+                  disabled={!assignInvoiceId || !assignAmount || parseFloat(assignAmount) <= 0 || assignPaymentMutation.isPending}
+                  className="bg-emerald-600 hover:bg-emerald-700"
+                >
+                  {assignPaymentMutation.isPending ? 'Aplicando...' : 'Aplicar Abono'}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -445,13 +630,13 @@ export function AccountsView() {
                 </h2>
               </div>
               <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                {client?.phone && (
+                {typeof client?.phone === 'string' && (
                   <div className="flex items-center gap-1">
                     <Phone className="w-3.5 h-3.5" />
                     <span>{client.phone}</span>
                   </div>
                 )}
-                {client?.email && (
+                {typeof client?.email === 'string' && (
                   <div className="flex items-center gap-1">
                     <Mail className="w-3.5 h-3.5" />
                     <span>{client.email}</span>
@@ -476,6 +661,14 @@ export function AccountsView() {
                     <p className="text-[10px] text-muted-foreground">Abonos</p>
                     <p className="text-sm font-bold text-emerald-600">{formatCurrency(summary.totalAbonos)}</p>
                   </div>
+                  <div className="text-center px-3 py-1 rounded bg-sky-50 dark:bg-sky-900/20">
+                    <p className="text-[10px] text-muted-foreground">Facturación</p>
+                    <p className="text-sm font-bold text-sky-600">{formatCurrency(summary.totalInvoicesAmount ?? 0)}</p>
+                  </div>
+                  <div className="text-center px-3 py-1 rounded bg-green-50 dark:bg-green-900/20">
+                    <p className="text-[10px] text-muted-foreground">Pagado</p>
+                    <p className="text-sm font-bold text-green-600">{formatCurrency(summary.totalInvoicesPaid ?? 0)}</p>
+                  </div>
                   <div className="text-center px-3 py-1 rounded bg-blue-50 dark:bg-blue-900/20">
                     <p className="text-[10px] text-muted-foreground">Débitos</p>
                     <p className="text-sm font-bold text-blue-600">{formatCurrency(summary.totalDebitos)}</p>
@@ -488,12 +681,12 @@ export function AccountsView() {
               )}
               <div>
                 <p className="text-xs text-muted-foreground">Balance</p>
-                <p className={`text-2xl font-bold ${(client?.balance ?? 0) > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                  {formatCurrency(client?.balance ?? 0)}
+                <p className={`text-2xl font-bold ${(statementBalance as number) > 0 ? 'text-red-600' : (statementBalance as number) < 0 ? 'text-emerald-600' : ''}`}>
+                  {formatCurrency(statementBalance)}
                 </p>
-                {currentDollarRate > 0 && (client?.balance ?? 0) !== 0 && (
-                  <p className={`text-sm font-semibold ${(client?.balance ?? 0) > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
-                    {formatBs((client?.balance ?? 0) * currentDollarRate)}
+                {currentDollarRate > 0 && statementBalance !== 0 && (
+                  <p className={`text-sm font-semibold ${(statementBalance as number) > 0 ? 'text-red-500' : (statementBalance as number) < 0 ? 'text-emerald-500' : ''}`}>
+                    {formatBs(statementBalance * currentDollarRate)}
                   </p>
                 )}
                 {currentDollarRate > 0 && (
@@ -506,7 +699,7 @@ export function AccountsView() {
           </div>
 
           {/* Mobile summary cards */}
-          {summary && (
+              {summary && (
             <div className="md:hidden mt-3">
               <Separator className="mb-3" />
               <div className="grid grid-cols-2 gap-2">
@@ -524,6 +717,20 @@ export function AccountsView() {
                     <p className="text-[10px] text-emerald-500">{formatBs(summary.totalAbonos * currentDollarRate)}</p>
                   )}
                 </div>
+                    <div className="text-center p-2 rounded-lg bg-sky-50 dark:bg-sky-900/20">
+                      <p className="text-xs text-muted-foreground">Facturación</p>
+                      <p className="text-sm font-bold text-sky-600">{formatCurrency(summary.totalInvoicesAmount ?? 0)}</p>
+                      {currentDollarRate > 0 && (
+                        <p className="text-[10px] text-sky-500">{formatBs((summary.totalInvoicesAmount ?? 0) * currentDollarRate)}</p>
+                      )}
+                    </div>
+                    <div className="text-center p-2 rounded-lg bg-green-50 dark:bg-green-900/20">
+                      <p className="text-xs text-muted-foreground">Pagado</p>
+                      <p className="text-sm font-bold text-green-600">{formatCurrency(summary.totalInvoicesPaid ?? 0)}</p>
+                      {currentDollarRate > 0 && (
+                        <p className="text-[10px] text-green-500">{formatBs((summary.totalInvoicesPaid ?? 0) * currentDollarRate)}</p>
+                      )}
+                    </div>
                 <div className="text-center p-2 rounded-lg bg-blue-50 dark:bg-blue-900/20">
                   <p className="text-xs text-muted-foreground">Total Débitos</p>
                   <p className="text-sm font-bold text-blue-600">{formatCurrency(summary.totalDebitos)}</p>
@@ -531,7 +738,7 @@ export function AccountsView() {
                     <p className="text-[10px] text-blue-500">{formatBs(summary.totalDebitos * currentDollarRate)}</p>
                   )}
                 </div>
-                <div className="text-center p-2 rounded-lg bg-amber-50 dark:bg-amber-900/20">
+                    <div className="text-center p-2 rounded-lg bg-amber-50 dark:bg-amber-900/20">
                   <p className="text-xs text-muted-foreground">Fact. Pendientes</p>
                   <p className="text-sm font-bold text-amber-600">{summary.pendingInvoicesCount}</p>
                   {currentDollarRate > 0 && summary.pendingInvoicesTotal > 0 && (
@@ -566,6 +773,7 @@ export function AccountsView() {
                   <TableHead className="text-right">Tasa</TableHead>
                   <TableHead className="text-right">Saldo Acum.</TableHead>
                   <TableHead>Usuario</TableHead>
+                  <TableHead>Acción</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -578,6 +786,7 @@ export function AccountsView() {
                 ) : (
                   entriesWithBalance.map((entry: AccountEntry & { runningBalance: number }) => {
                     const isCredit = entry.type === 'CREDITO'
+                    const isAbono = entry.type === 'ABONO'
                     const isDebit = entry.type === 'DEBITO'
                     return (
                       <TableRow key={entry.id}>
@@ -588,9 +797,11 @@ export function AccountsView() {
                             className={
                               isCredit
                                 ? 'border-red-300 text-red-700 dark:border-red-700 dark:text-red-400'
-                                : isDebit
-                                  ? 'border-blue-300 text-blue-700 dark:border-blue-700 dark:text-blue-400'
-                                  : 'border-emerald-300 text-emerald-700 dark:border-emerald-700 dark:text-emerald-400'
+                                : isAbono
+                                  ? 'border-emerald-300 text-emerald-700 dark:border-emerald-700 dark:text-emerald-400'
+                                  : isDebit
+                                    ? 'border-blue-300 text-blue-700 dark:border-blue-700 dark:text-blue-400'
+                                    : 'border-muted-300 text-muted-700 dark:border-muted-700 dark:text-muted-400'
                             }
                           >
                             {isCredit && <ArrowUpCircle className="w-3 h-3 mr-1 inline" />}
@@ -606,20 +817,24 @@ export function AccountsView() {
                               <button
                                 className="text-emerald-600 hover:underline"
                                 onClick={() => {
-                                  setCurrentPage('pos')
+                                  const invId = entry.invoice?.id
+                                  if (invId) {
+                                    setSelectedInvoiceId(invId)
+                                    setCurrentPage('invoicing')
+                                  }
                                 }}
                               >
-                                {entry.invoice.number}
+                                {entry.invoice?.number}
                               </button>
                             )
                             : '-'}
                         </TableCell>
-                        <TableCell className={`text-right font-medium whitespace-nowrap ${isCredit ? 'text-red-600' : 'text-emerald-600'}`}>
-                          {isCredit ? '+' : '-'}{formatCurrency(entry.amount)}
+                        <TableCell className={`text-right font-medium whitespace-nowrap ${entry.type === 'CREDITO' ? 'text-red-600' : entry.type === 'ABONO' ? 'text-emerald-600' : 'text-blue-600'}`}>
+                          {(entry.type === 'CREDITO' || entry.type === 'ABONO') ? '+' : '-'}{formatCurrency(entry.amount)}
                         </TableCell>
-                        <TableCell className={`text-right font-medium whitespace-nowrap ${isCredit ? 'text-red-600' : 'text-emerald-600'}`}>
+                        <TableCell className={`text-right font-medium whitespace-nowrap ${entry.type === 'CREDITO' ? 'text-red-600' : entry.type === 'ABONO' ? 'text-emerald-600' : 'text-blue-600'}`}>
                           {entry.amountBs > 0
-                            ? `${isCredit ? '+' : '-'}${formatBs(entry.amountBs)}`
+                            ? `${(entry.type === 'CREDITO' || entry.type === 'ABONO') ? '+' : '-'}${formatBs(entry.amountBs)}`
                             : '-'}
                         </TableCell>
                         <TableCell className="text-right text-xs text-muted-foreground whitespace-nowrap">
@@ -630,6 +845,22 @@ export function AccountsView() {
                           {entry.runningBalance < 0 && <span className="text-xs ml-0.5">A favor</span>}
                         </TableCell>
                         <TableCell className="text-sm">{entry.user?.name || '-'}</TableCell>
+                        <TableCell className="text-sm">
+                          {entry.type === 'ABONO' && !entry.invoiceId ? (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => openAssignDialog(entry.id, entry.amount)}
+                              disabled={pendingInvoices.length === 0}
+                            >
+                              Asignar
+                            </Button>
+                          ) : entry.invoiceId ? (
+                            <span className="text-muted-foreground">Asignado</span>
+                          ) : (
+                            '-'
+                          )}
+                        </TableCell>
                       </TableRow>
                     )
                   })
@@ -640,13 +871,13 @@ export function AccountsView() {
         </CardContent>
       </Card>
 
-      {/* Pending Invoices */}
-      {pendingInvoices.length > 0 && (
+      {/* Client Invoices */}
+      {invoices.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-amber-500" />
-              Facturas Pendientes
+              Facturas
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
@@ -658,23 +889,36 @@ export function AccountsView() {
                     <TableHead>Fecha</TableHead>
                     <TableHead>Estado</TableHead>
                     <TableHead className="text-right">Total (USD)</TableHead>
+                    <TableHead className="text-right">Pagado (USD)</TableHead>
+                    <TableHead className="text-right">Pendiente (USD)</TableHead>
                     <TableHead className="text-right">Total (Bs)</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {pendingInvoices.map((inv: Record<string, unknown>) => (
-                    <TableRow key={inv.id as string}>
-                      <TableCell className="font-medium">{inv.number as string}</TableCell>
+                  {invoices.map((inv: Record<string, unknown>) => (
+                    <TableRow
+                      key={inv.id as string}
+                      className="cursor-pointer hover:bg-muted"
+                      onClick={() => {
+                        setSelectedInvoiceId(inv.id as string)
+                        setCurrentPage('invoicing')
+                      }}
+                    >
+                      <TableCell className="font-medium text-emerald-600 hover:underline">
+                        {inv.number as string}
+                      </TableCell>
                       <TableCell className="text-sm">{formatDate(inv.date as string)}</TableCell>
                       <TableCell>
                         <Badge className={getStatusColor(inv.status as string)}>
                           {inv.status as string}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right font-medium">{formatCurrency(inv.total as number)}</TableCell>
+                      <TableCell className="text-right font-medium">{formatCurrency((inv.total as number) ?? 0)}</TableCell>
+                      <TableCell className="text-right font-medium">{formatCurrency((inv.paidAmount as number) ?? 0)}</TableCell>
+                      <TableCell className="text-right font-medium">{formatCurrency((inv.remainingAmount as number) ?? 0)}</TableCell>
                       <TableCell className="text-right font-medium">
                         {currentDollarRate > 0
-                          ? formatBs((inv.total as number) * currentDollarRate)
+                          ? formatBs(((inv.total as number) ?? 0) * currentDollarRate)
                           : '-'}
                       </TableCell>
                     </TableRow>
